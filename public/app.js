@@ -1,4 +1,4 @@
-/* 卡坦岛前端 */
+/* KatanPro 前端 */
 const $ = (s) => document.querySelector(s);
 const RES = ['wood', 'brick', 'sheep', 'wheat', 'ore'];
 const CN = { wood: '木材', brick: '砖块', sheep: '羊毛', wheat: '小麦', ore: '矿石', desert: '沙漠' };

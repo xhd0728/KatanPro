@@ -1,8 +1,9 @@
 {
-  "name": "catan",
+  "name": "katanpro",
   "version": "1.0.0",
-  "type": "module",
+  "description": "KatanPro — an open-source, browser-playable online board game of settlement, trade and road building, with rule-based and LLM-driven bots.",
   "private": true,
+  "type": "module",
   "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22"
