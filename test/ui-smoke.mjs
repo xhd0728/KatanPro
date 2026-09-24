@@ -12,7 +12,7 @@ if(!chromeBin) throw new Error('Set CHROME_BIN to a Chrome/Chromium executable.'
 const port=22000+Math.floor(Math.random()*8000),origin=`http://127.0.0.1:${port}`;
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'catan-ui-'));
 const output=path.resolve('artifacts/ui');fs.mkdirSync(output,{recursive:true});
-const server=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:String(port)},stdio:'ignore'});
+const server=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:String(port),CATAN_AI_BASE_URL:'',CATAN_AI_MODEL:'',CATAN_AI_KEY:''},stdio:'ignore'});
 const chrome=spawn(chromeBin,['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{stdio:['ignore','ignore','pipe']});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 let socket;const errors=[];let seq=0;const callbacks=new Map();
@@ -45,7 +45,7 @@ try{
     await until(`currentRoom.settings.mapSize==='${size}'`);
     assert.ok(await run("$('#mapDescription').textContent.length>10"));
   }
-  await run("$('#soloMode').checked=true;$('#soloMode').dispatchEvent(new Event('change'));$('#botCount').value='2';$('#startBtn').click()");
+  await run("$('#soloMode').checked=true;$('#soloMode').dispatchEvent(new Event('change'));$('#botCount').value='2';$('#botDifficulty').value='rule';$('#botDifficulty').dispatchEvent(new Event('change'));$('#startBtn').click()");
   await until("typeof S !== 'undefined' && S?.phase==='setup'");
   const setupSnapshot=await run('JSON.stringify(S)');
   await viewport(390,844,true);
@@ -186,9 +186,25 @@ try{
   if(await run("matchMedia('(hover:hover) and (pointer:fine)').matches")) assert.ok(await run("parseFloat($('.hand-card').style.getPropertyValue('--dock-scale'))")>1,'mouse proximity magnifies dock icons');
   assert.equal(await run("({h:$('#handTray').offsetHeight,a:$('#actionbar').offsetHeight})").then(v=>JSON.stringify(v)),JSON.stringify(dockSize),'dock hover preserves board layout');
   await screenshot('dock-desktop');
+  await call('Page.navigate',{url:origin});await until("document.querySelector('[name=createMode]')");
+  await run("document.querySelector('[name=createMode][value=\"ai-only\"]').checked=true;$('#createBtn').click()");
+  await until("typeof currentRoom!=='undefined'&&currentRoom?.mode==='ai-only'");
+  assert.equal(await run("$('#botDifficulty').value"),'llm','large model is the default');
+  assert.equal(await run('currentRoom.players.length'),0,'host does not occupy a player seat');
+  await run("$('#botCount').value='2';$('#botCount').dispatchEvent(new Event('change'))");await until('currentRoom.settings.botCount===2');
+  await viewport(390,844,true);await screenshot('ai-room-mobile');await viewport(1440,960);await screenshot('ai-room-desktop');
+  await run("$('#startBtn').click()");await until("typeof S!=='undefined'&&S?.phase==='play'",15000);
+  assert.equal(await run('S.viewer'),-1);assert.equal(await run('S.players.every(p=>p.kind===\'bot\'&&p.res===null)'),true);
+  await screenshot('ai-spectator-desktop');
+  await call('Page.reload');await until("typeof S!=='undefined'&&S?.viewer===-1");
+  assert.equal(await run('currentRoom.isHost'),true,'spectator host survives reload');
+  await viewport(390,844,true);await screenshot('ai-spectator-mobile');
+  assert.equal(await run("getComputedStyle($('#handTray')).display"),'none','spectators have more board space');
+  await viewport(844,390,true);await screenshot('ai-spectator-landscape');
+  assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true,'spectator landscape has no overflow');
   assert.deepEqual(errors,[],'browser runtime errors');
-  console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],screenshots:output,browserErrors:errors},null,2));
+  console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],featureChecks:['trade-inventory','unavailable-reasons','sidebar-eight-players','dock-hover','ai-only-room','spectator-host-reload'],screenshots:output,browserErrors:errors},null,2));
 } finally {
-  socket?.close();chrome.kill();server.kill();
+  socket?.terminate();chrome.kill();server.kill();
   await pause(200);try{fs.rmSync(profile,{recursive:true,force:true});}catch{}
 }

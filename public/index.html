@@ -21,13 +21,14 @@
       <div id="lobbyMain">
         <div><span class="eyebrow">LET’S PLAY</span><h2>准备好登岛了吗？</h2><p class="section-desc">创建一张新牌桌，或加入朋友的房间。</p></div>
         <label class="fld"><span>你的昵称</span><input id="nameInput" maxlength="12" autocomplete="nickname" placeholder="让大家认识你"/></label>
+        <fieldset class="mode-picker"><legend>选择牌桌模式</legend><label><input type="radio" name="createMode" value="multiplayer" checked/><span><b>一起开拓</b><small>真人对战 · 可加入 AI</small></span></label><label><input type="radio" name="createMode" value="ai-only"/><span><b>AI 观战</b><small>全部 AI 对战 · 你来观战</small></span></label></fieldset>
         <button id="createBtn" class="btn primary big">创建新房间 <span>↗</span></button>
         <div class="section-divider"><span>或者加入朋友</span></div>
         <div class="joinline"><label class="fld"><span>房间码</span><input id="codeInput" maxlength="4" autocomplete="off" placeholder="4 位房间码"/></label><label class="fld"><span>房间密码</span><input id="passwordInput" maxlength="24" type="password" autocomplete="off" placeholder="如有"/></label><button id="joinBtn" class="btn">加入</button></div>
         <section class="room-browser"><div class="section-title"><span>公开牌桌 <b id="roomCount"></b></span><button id="refreshRooms" class="text-btn">刷新 ↻</button></div><div id="roomList" class="room-list"><div class="empty-state">正在寻找牌桌…</div></div></section>
       </div>
       <div id="roomView" hidden>
-        <span class="eyebrow">YOUR TABLE</span><h2>等待伙伴入座</h2>
+        <span class="eyebrow">YOUR TABLE</span><h2 id="roomTitle">等待伙伴入座</h2>
         <div class="roomcode-line"><span>房间码</span><b id="roomCode"></b><span id="roomRole" class="role-badge"></span><button id="copyLink" class="btn tiny">邀请朋友</button><button id="leaveRoom" class="text-btn">离开</button></div>
         <div id="roomPlayers" class="plist"></div>
         <div class="settings">
@@ -37,7 +38,7 @@
           <label class="fld"><span>房间密码</span><input id="setPassword" type="password" maxlength="24" autocomplete="off" placeholder="留空为公开牌桌"/></label>
         </div>
         <p id="mapDescription" class="tip"></p>
-        <div class="solo-settings"><label class="checkline"><input id="soloMode" type="checkbox"/> 邀请机器人入座</label><div class="settings"><label class="fld"><span>数量</span><select id="botCount"><option value="1">1 位</option><option value="2" selected>2 位</option><option value="3">3 位</option><option value="4">4 位</option><option value="5">5 位</option><option value="6">6 位</option><option value="7">7 位</option></select></label><label class="fld"><span>对手类型</span><select id="botType"><option value="rule">规则机器人</option><option value="ai">AI 开拓者</option></select></label></div></div>
+        <div class="solo-settings"><label class="checkline"><input id="soloMode" type="checkbox"/> 邀请机器人入座</label><div class="settings"><label class="fld"><span>AI 数量</span><select id="botCount"><option value="1">1 位</option><option value="2" selected>2 位</option><option value="3">3 位</option><option value="4">4 位</option><option value="5">5 位</option><option value="6">6 位</option><option value="7">7 位</option><option value="8">8 位</option></select></label><label class="fld"><span>AI 难度 / 策略</span><select id="botDifficulty" aria-describedby="botDescription"><option value="llm">大模型（默认）</option><option value="rule">基础规则</option></select></label></div><p id="botDescription" class="tip"></p></div>
         <button id="startBtn" class="btn primary big">启程，开始游戏 →</button><p id="hostTip" class="tip"></p>
       </div>
     </div>

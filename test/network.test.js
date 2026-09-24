@@ -28,7 +28,7 @@ class Client {
   close() { this.ws.close(); }
 }
 
-test('双人联机加 AI：模型无效动作回退、旁观者只读', { timeout: 15000 }, async () => {
+test('联机与纯 AI 对局：模型回退、观战权限及房主恢复', { timeout: 15000 }, async () => {
   let aiCalls = 0;
   const mock = http.createServer((req, res) => {
     aiCalls++;
@@ -106,6 +106,40 @@ test('双人联机加 AI：模型无效动作回退、旁观者只读', { timeou
     await reload.next('state');
     const intruder=await new Client(`ws://127.0.0.1:${port}/ws?room=${code2}&name=viewer`).open();clients.push(intruder);
     assert.match((await intruder.next('error')).msg,/密码/);
+
+    const catalog=await fetch(`http://127.0.0.1:${port}/api/bot-profiles`).then(r=>r.json());
+    assert.equal(catalog.defaultDifficulty,'llm');
+    assert.deepEqual(catalog.profiles.map(p=>p.id),['llm','rule']);
+    assert.equal(JSON.stringify(catalog).includes('dummy'),false);
+    const aiCreator=await new Client(`ws://127.0.0.1:${port}/ws?mode=ai-only`).open();clients.push(aiCreator);
+    const aiCode=(await aiCreator.next('created')).code;aiCreator.close();
+    const observer=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&name=Director`).open();clients.push(observer);
+    const observerToken=(await observer.next('me')).token;
+    const aiRoom=(await observer.next('joined')).room;
+    assert.equal(aiRoom.isHost,true);assert.equal(aiRoom.players.length,0);assert.equal(aiRoom.settings.botDifficulty,'llm');
+    const guest=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&name=Guest`).open();clients.push(guest);
+    assert.equal((await guest.next('joined')).room.isHost,false);
+    guest.send({type:'settings',settings:{botCount:8}});assert.match((await guest.next('error')).msg,/房主/);
+    observer.send({type:'settings',settings:{botDifficulty:'unknown'}});assert.match((await observer.next('error')).msg,/未知/);
+    const director=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&token=${observerToken}`).open();clients.push(director);
+    assert.equal((await director.next('joined')).room.isHost,true);
+    director.send({type:'settings',settings:{botCount:2}});
+    const playing=new Promise(resolve=>{director.onMessage=m=>{if(m.type==='state'&&m.state.phase==='play')resolve(m.state);};});
+    const callsBefore=aiCalls;
+    director.send({type:'start',bots:[{type:'rule'}]});
+    const aiState=await playing;
+    assert.equal(aiState.viewer,-1);assert.equal(aiState.players.length,2);
+    assert.equal(aiState.players.every(p=>p.kind==='bot'&&p.res===null),true);
+    assert.equal(aiState.cards,null);assert.ok(aiCalls>callsBefore,'default difficulty calls the model');
+    director.send({type:'action',action:{type:'roll'}});assert.match((await director.next('error')).msg,/观战者/);
+    const directorReload=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&token=${observerToken}`).open();clients.push(directorReload);
+    assert.equal((await directorReload.next('joined')).room.isHost,true);
+    assert.equal((await directorReload.next('state')).state.viewer,-1);
+    const fullCreator=await new Client(`ws://127.0.0.1:${port}/ws?mode=ai-only`).open();clients.push(fullCreator);
+    const fullCode=(await fullCreator.next('created')).code;
+    const fullHost=await new Client(`ws://127.0.0.1:${port}/ws?room=${fullCode}`).open();clients.push(fullHost);await fullHost.next('joined');
+    fullHost.send({type:'settings',settings:{botCount:8,botDifficulty:'rule'}});fullHost.send({type:'start'});
+    assert.equal((await fullHost.next('state')).state.players.length,8,'all eight seats can be AI');
 
   } finally {
     clients.forEach(c => c.close());

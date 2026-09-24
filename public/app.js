@@ -111,6 +111,7 @@ function connect(code, password = '') {
   connectionStatus('连接中', true);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   let u = `${proto}://${location.host}/ws?name=${encodeURIComponent(name)}${code ? '&room=' + code : ''}${password ? '&password=' + encodeURIComponent(password) : ''}`;
+  if (!code) u += '&mode=' + encodeURIComponent(document.querySelector('[name="createMode"]:checked').value);
   if (code && myToken) u += '&token=' + encodeURIComponent(myToken);
   const socket = ws = new WebSocket(u);
   ws.onopen = () => { reconnectAttempts = 0; connectionStatus('已连接'); };
@@ -159,7 +160,7 @@ async function loadRooms() {
   try {
     const rooms = await fetch('/api/rooms', { cache: 'no-store' }).then(r => r.json());
     $('#roomCount').textContent = `${rooms.length} 个`;
-    list.innerHTML = rooms.length ? rooms.map(r => `<div class="room-item"><div><b>${r.locked ? '🔒' : '🌐'} ${r.code}</b><span>${r.players}/${r.maxPlayers} 人 · ${MAP_NAMES[r.settings.mapSize] || '小地图'}</span></div><button class="btn tiny" onclick="quickJoin('${r.code}', ${r.locked})">加入</button></div>`).join('') : '<div class="empty-state">暂无公开房间，创建一个吧</div>';
+    list.innerHTML = rooms.length ? rooms.map(r => `<div class="room-item"><div><b>${r.locked ? '🔒' : '🌐'} ${r.code}</b><span>${r.mode === 'ai-only' ? `${r.settings.botCount} 位 AI · 观战` : `${r.players}/${r.maxPlayers} 人`} · ${MAP_NAMES[r.settings.mapSize] || '小地图'}</span></div><button class="btn tiny" onclick="quickJoin('${r.code}', ${r.locked})">${r.mode === 'ai-only' ? '观战' : '加入'}</button></div>`).join('') : '<div class="empty-state">暂无公开房间，创建一个吧</div>';
   } catch { list.innerHTML = '<div class="empty-state">大厅暂时不可用</div>'; }
 }
 window.quickJoin = (code, locked) => { $('#codeInput').value = code; if (locked) $('#passwordInput').focus(); else joinRoom(); };
@@ -183,13 +184,19 @@ function showRoom(r) {
   $('#roomView').hidden = false;
   $('#roomCode').textContent = r.code;
   const isHost = r.isHost;
-  $('#roomRole').textContent = isHost ? '房主' : '玩家';
-  $('#roomPlayers').innerHTML = r.players.map(p => `<span class="chip">${esc(p.name)}${p.connected === false ? ' · 离线' : ''}</span>`).join('') || '<span class="chip">虚位以待</span>';
+  const aiOnly = r.mode === 'ai-only';
+  $('#roomTitle').textContent = aiOnly ? '让 AI 开拓，你来观战' : '等待伙伴入座';
+  $('#roomRole').textContent = isHost ? (aiOnly ? '房主 · 观战' : '房主') : aiOnly ? '观战者' : '玩家';
+  $('#roomPlayers').innerHTML = aiOnly ? `<span class="chip">${r.settings.botCount} 位 AI · ${r.spectatorCount} 人观战</span>` : r.players.map(p => `<span class="chip">${esc(p.name)}${p.connected === false ? ' · 离线' : ''}</span>`).join('') || '<span class="chip">虚位以待</span>';
   $('#setMap').value = r.settings.mapSize; $('#setVP').value = r.settings.targetVP; $('#setBonus').value = r.settings.startBonus;
   $('#mapDescription').textContent = MAP_DESCRIPTIONS[r.settings.mapSize] || '';
   ['setMap', 'setVP', 'setBonus', 'setPassword'].forEach(id => $('#' + id).disabled = !isHost);
   setUnavailable($('#startBtn'), isHost ? '' : '只有房主可以开始游戏');
-  $('#hostTip').textContent = isHost ? '你是房主，可以修改设置并开启游戏' : '当前房主正在准备，只有房主可以修改设置和开启游戏';
+  $('#hostTip').textContent = isHost ? (aiOnly ? '全部席位由 AI 执行，你负责设置牌桌并观战；也可邀请朋友一起观看。' : '你是房主，可以修改设置并开启游戏') : '当前房主正在准备，只有房主可以修改设置和开启游戏';
+  $('#startBtn').textContent = aiOnly ? '开始 AI 对局 →' : '启程，开始游戏 →';
+  soloMode.checked = r.settings.withBots;
+  botCount.value = String(r.settings.botCount);
+  botDifficulty.value = r.settings.botDifficulty;
   syncBotOptions();
 }
 const settingKeys = {setMap:'mapSize',setVP:'targetVP',setBonus:'startBonus',setPassword:'password'};
@@ -198,24 +205,38 @@ Object.entries(settingKeys).forEach(([id,key]) => $('#' + id).addEventListener('
 }));
 const soloMode = $('#soloMode');
 const botCount = $('#botCount');
-const botType = $('#botType');
+const botDifficulty = $('#botDifficulty');
+let botProfiles = [
+  {id:'llm',description:'由服务端配置的大模型决策，超时或无效动作时自动回退。'},
+  {id:'rule',description:'使用本地规则策略，无需外部模型，行动更快。'},
+];
+fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
+  botProfiles = catalog.profiles;
+  botDifficulty.innerHTML = botProfiles.map(p => `<option value="${esc(p.id)}">${esc(p.label)}${p.id === catalog.defaultDifficulty ? '（默认）' : ''}</option>`).join('');
+  botDifficulty.value = currentRoom?.settings.botDifficulty || catalog.defaultDifficulty;
+  syncBotOptions();
+}).catch(() => {});
 function syncBotOptions() {
+  const aiOnly = currentRoom?.mode === 'ai-only';
+  const isHost = currentRoom?.isHost ?? true;
+  if (aiOnly) soloMode.checked = true;
   const enabled = soloMode.checked;
-  const spaces = Math.max(0, 8 - (currentRoom?.players.length || 1));
-  [...botCount.options].forEach(o => o.disabled = +o.value > spaces);
-  if (+botCount.value > spaces) botCount.value = String(Math.max(1, spaces));
-  botCount.disabled = !enabled || !spaces;
-  botType.disabled = !enabled || !spaces;
+  const spaces = aiOnly ? 8 : Math.max(0, 8 - (currentRoom?.players.length || 1));
+  [...botCount.options].forEach(o => { o.disabled = +o.value > spaces || (aiOnly && +o.value < 2); o.hidden = o.disabled; });
+  if (+botCount.value > spaces) botCount.value = String(Math.max(aiOnly ? 2 : 1, spaces));
+  soloMode.disabled = aiOnly || !isHost;
+  soloMode.title = aiOnly ? 'AI 观战模式下所有席位都由机器人参与' : !isHost ? '只有房主可以设置 AI' : '';
+  const reason = !isHost ? '只有房主可以设置 AI' : !enabled ? '请先勾选“邀请机器人入座”' : !spaces ? '房间已满，没有空闲席位' : '';
+  for (const field of [botCount,botDifficulty]) { field.disabled = !!reason; field.title = reason; }
+  $('#botDescription').textContent = botProfiles.find(p => p.id === botDifficulty.value)?.description || '';
 }
-soloMode.addEventListener('change', syncBotOptions);
-botType.addEventListener('change', syncBotOptions);
+soloMode.addEventListener('change', () => { syncBotOptions(); send({type:'settings',settings:{withBots:soloMode.checked}}); });
+botCount.addEventListener('change', () => send({type:'settings',settings:{botCount:+botCount.value}}));
+botDifficulty.addEventListener('change', () => { syncBotOptions(); send({type:'settings',settings:{botDifficulty:botDifficulty.value}}); });
 syncBotOptions();
 $('#startBtn').onclick = () => {
   const available = Math.max(0, 8 - (currentRoom?.players.length || 1));
-  const bots = soloMode.checked ? Array.from({ length: Math.min(available, +botCount.value || 1) }, (_, i) => ({
-    name: botType.value === 'ai' ? `AI Bot ${i + 1}` : `规则Bot ${i + 1}`,
-    type: botType.value
-  })) : [];
+  const bots = soloMode.checked ? Array.from({ length: Math.min(available, +botCount.value || 1) }, () => ({ difficulty: botDifficulty.value })) : [];
   send({ type: 'start', bots });
 };
 $('#copyLink').onclick = () => copyLink();
@@ -255,6 +276,9 @@ function me() { return S && S.viewer >= 0 ? S.players[S.viewer] : null; }
 
 let winDismissed = false;
 function render() {
+  const spectating = !me();
+  if ($('#game').classList.contains('spectating') !== spectating) needResizeFit = true;
+  $('#game').classList.toggle('spectating', spectating);
   if (S.winner == null) winDismissed = false;
   if (S.phase !== 'play' || S.viewer !== S.current || (!S.rolled && !S.roadBuildLeft)) pickMode = null;
   else if (pickMode && !S.legal?.[pickMode === 'road' ? 'road' : pickMode]?.length) pickMode = null;
@@ -351,6 +375,10 @@ function renderActionBar() {
   }
   if (S.phase === 'setup') {
     bar.innerHTML = `<span class="waitmsg">${activePlayer() === S.viewer ? (S.legal.kind === 'settlement' ? '选择高亮交点，安放你的定居点' : '选择相连的高亮道路，开启你的路网') : `等待 ${esc(S.players[activePlayer()].name)} 完成摆放`}<div class="wait-secondary">先放定居点，再放道路 · 正序与倒序各一轮</div></span>`;
+    return;
+  }
+  if (!m) {
+    bar.innerHTML = `<span class="waitmsg">正在观战 · ${currentRoom?.mode === 'ai-only' ? 'AI 会自动掷骰、交易与建造' : '等待各位开拓者行动'}<div class="wait-secondary">可查看玩家、骰子统计与岛上动态</div></span>`;
     return;
   }
   const myTurn = !!m && S.viewer === S.current && !S.eventPending;
