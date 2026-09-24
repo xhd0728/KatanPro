@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#174e50"/>
+<title>卡坦岛 · 一起开拓这座岛</title>
+<link rel="icon" href="/assets/wood.svg" type="image/svg+xml"/>
+<link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+<div id="lobby" class="screen">
+  <div class="lobby-card">
+    <div class="lobby-intro">
+      <div class="brand"><span class="brand-mark">⬡</span><span>卡坦岛 <small>CATAN / ONLINE</small></span></div>
+      <div class="hero-copy"><span class="eyebrow">A LITTLE ISLAND. ENDLESS POSSIBILITIES.</span><h1>一座岛屿，<br>无限可能。</h1><p>从第一座定居点出发。<br>收集、交易、建造，与朋友一起开拓卡坦岛。</p></div>
+      <div class="island-art" aria-hidden="true"><div class="art-hex forest"><img src="/assets/wood.svg" alt=""/></div><div class="art-hex field"><img src="/assets/wheat.svg" alt=""/></div><div class="art-hex mountain"><img src="/assets/ore.svg" alt=""/></div><div class="art-hex pasture"><img src="/assets/sheep.svg" alt=""/></div><div class="art-hex clay"><img src="/assets/brick.svg" alt=""/></div><span class="island-ring ring-one"></span><span class="island-ring ring-two"></span></div>
+      <div class="intro-facts"><span>02–08 <small>位开拓者</small></span><span>29 × 5 <small>张资源卡</small></span><span>ONLINE <small>朋友与 AI 同桌</small></span></div>
+    </div>
+    <div class="lobby-content">
+      <div id="lobbyMain">
+        <div><span class="eyebrow">LET’S PLAY</span><h2>准备好登岛了吗？</h2><p class="section-desc">创建一张新牌桌，或加入朋友的房间。</p></div>
+        <label class="fld"><span>你的昵称</span><input id="nameInput" maxlength="12" autocomplete="nickname" placeholder="让大家认识你"/></label>
+        <button id="createBtn" class="btn primary big">创建新房间 <span>↗</span></button>
+        <div class="section-divider"><span>或者加入朋友</span></div>
+        <div class="joinline"><label class="fld"><span>房间码</span><input id="codeInput" maxlength="4" autocomplete="off" placeholder="4 位房间码"/></label><label class="fld"><span>房间密码</span><input id="passwordInput" maxlength="24" type="password" autocomplete="off" placeholder="如有"/></label><button id="joinBtn" class="btn">加入</button></div>
+        <section class="room-browser"><div class="section-title"><span>公开牌桌 <b id="roomCount"></b></span><button id="refreshRooms" class="text-btn">刷新 ↻</button></div><div id="roomList" class="room-list"><div class="empty-state">正在寻找牌桌…</div></div></section>
+      </div>
+      <div id="roomView" hidden>
+        <span class="eyebrow">YOUR TABLE</span><h2>等待伙伴入座</h2>
+        <div class="roomcode-line"><span>房间码</span><b id="roomCode"></b><span id="roomRole" class="role-badge"></span><button id="copyLink" class="btn tiny">邀请朋友</button><button id="leaveRoom" class="text-btn">离开</button></div>
+        <div id="roomPlayers" class="plist"></div>
+        <div class="settings">
+          <label class="fld"><span>地图大小</span><select id="setMap" aria-describedby="mapDescription"><option value="small">小地图 · 19 块 · 建议 2–4 人</option><option value="medium">中地图 · 30 块 · 建议 5–6 人</option><option value="large">大地图 · 37 块 · 建议 7–8 人</option><option value="epic">超大大陆 · 61 块 · 建议 6–8 人</option><option value="twin">双岛地峡 · 73 块 · 建议 6–8 人</option></select></label>
+          <label class="fld"><span>胜利目标</span><select id="setVP"><option value="7">7 分 · 轻松速局</option><option value="10" selected>10 分 · 经典对局</option><option value="12">12 分 · 进阶挑战</option><option value="15">15 分 · 长线竞争</option></select></label>
+          <label class="fld"><span>起始资源</span><select id="setBonus"><option value="none">标准开局</option><option value="random1">额外随机 2 张</option><option value="random2">额外随机 4 张</option></select></label>
+          <label class="fld"><span>房间密码</span><input id="setPassword" type="password" maxlength="24" autocomplete="off" placeholder="留空为公开牌桌"/></label>
+        </div>
+        <p id="mapDescription" class="tip"></p>
+        <div class="solo-settings"><label class="checkline"><input id="soloMode" type="checkbox"/> 邀请机器人入座</label><div class="settings"><label class="fld"><span>数量</span><select id="botCount"><option value="1">1 位</option><option value="2" selected>2 位</option><option value="3">3 位</option><option value="4">4 位</option><option value="5">5 位</option><option value="6">6 位</option><option value="7">7 位</option></select></label><label class="fld"><span>对手类型</span><select id="botType"><option value="rule">规则机器人</option><option value="ai">AI 开拓者</option></select></label></div></div>
+        <button id="startBtn" class="btn primary big">启程，开始游戏 →</button><p id="hostTip" class="tip"></p>
+      </div>
+    </div>
+  </div>
+  <div class="lobby-footer">一段道路，一次交换，一场新的冒险。</div>
+</div>
+<div id="game" class="screen" hidden>
+  <header class="game-header">
+    <div class="brand game-brand"><span class="brand-mark">⬡</span><span>卡坦岛<small>CATAN</small></span><b id="hRoom"></b></div>
+    <div id="turnBanner" class="turn"></div>
+    <div class="hright"><span id="connectionStatus" class="connection-status" title="连接状态">已连接</span><button id="statsBtn" class="btn tiny" aria-label="骰子统计">统计</button><button id="helpBtn" class="btn tiny" aria-label="玩法说明">玩法</button><button id="shareBtn" class="btn tiny">邀请 ↗</button><a class="text-btn lobby-link" href="/" title="返回大厅">大厅</a></div>
+  </header>
+  <main>
+    <section id="boardwrap" aria-label="卡坦岛棋盘">
+      <div class="board-caption"><span class="eyebrow">THE ISLAND</span><span id="boardSubtitle">每一次选择，都让岛屿不同。</span></div>
+      <canvas id="board" aria-label="点击高亮交点或道路建造；可缩放和拖动"></canvas>
+      <div id="hint" role="status"></div>
+      <div id="boardTools" aria-label="棋盘缩放"><button id="zoomOut" type="button" title="缩小棋盘" aria-label="缩小棋盘">−</button><button id="zoomFit" type="button" title="显示全岛">全岛</button><button id="zoomIn" type="button" title="放大棋盘" aria-label="放大棋盘">＋</button></div>
+      <div id="diceView" class="diceview" aria-live="polite"></div>
+      <div id="buildConfirm" hidden></div>
+    </section>
+    <aside id="side"><div class="side-heading"><span class="eyebrow">开拓者</span><span id="gameGoal"></span></div><div id="playerCards"></div><div id="badgeBar" class="badges"></div><div id="bankBar" class="bankbar"></div><div id="diceStats" class="stats" hidden></div><div class="logbox"><div class="logtitle">岛上动态 <span id="deckLeft"></span></div><div id="log" role="log" aria-label="游戏日志"></div></div></aside>
+  </main>
+  <section id="handTray" class="hand-tray" aria-label="我的资源手牌"></section>
+  <footer id="actionbar"></footer>
+  <button id="mobileInfoBtn" class="mobile-info-btn" aria-expanded="false" aria-controls="side">玩家与动态 ↑</button>
+</div>
+<div id="modal" hidden><div class="modal-card" id="modalCard" role="dialog" aria-modal="true" aria-label="游戏操作" tabindex="-1"></div></div>
+<div id="offerBar" hidden role="status"></div><div id="toasts" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>
