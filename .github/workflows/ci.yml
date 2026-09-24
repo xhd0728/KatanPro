@@ -28,3 +28,20 @@ jobs:
         run: npm test
       - name: Run browser tests
         run: npm run test:ui
+      - name: Build single executable
+        run: npm run build
+      - name: Smoke test single executable
+        run: |
+          BIN="dist/katanpro-$(node -p "process.platform+'-'+process.arch")"
+          test -x "$BIN"
+          PORT=8791 HOST=127.0.0.1 "$BIN" &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null' EXIT
+          for i in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8791/api/rooms >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:8791/api/rooms | grep -q '\['
+          curl -fsS http://127.0.0.1:8791/ | grep -q 'KatanPro'
+          curl -fsS http://127.0.0.1:8791/app.js >/dev/null
+          echo "single executable smoke test passed"
