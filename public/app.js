@@ -158,6 +158,12 @@ function connect(code, password = '') {
     reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(roomCode); }, delay);
   };
 }
+window.addEventListener('online', () => {
+  if (roomCode && (!ws || ws.readyState !== WebSocket.OPEN) && !reconnectTimer) connect(roomCode);
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && roomCode && (!ws || ws.readyState !== WebSocket.OPEN) && !reconnectTimer) connect(roomCode);
+});
 /* ---------- 大厅 ---------- */
 $('#nameInput').value = name;
 $('#nameInput').addEventListener('input', e => { name = e.target.value.trim(); localStorage.setItem('catan_name', name); });

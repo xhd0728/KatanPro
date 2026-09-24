@@ -75,6 +75,16 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 32768 });
 
+// Detect half-open TCP connections so clients can enter the reconnect path.
+const heartbeatTimer = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 15000);
+heartbeatTimer.unref();
+
 function send(ws, obj) { try { ws.readyState === 1 && ws.send(JSON.stringify(obj)); } catch {} }
 
 function broadcast(room) {
@@ -105,6 +115,8 @@ function scheduleEmptyRoomCleanup(room) {
 }
 
 wss.on('connection', (ws, req) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (raw) => {
     try { handleMsg(ws, raw); } catch (e) { console.error('MSG ERROR:', e.stack); error(ws, '服务器内部错误'); }
   });
