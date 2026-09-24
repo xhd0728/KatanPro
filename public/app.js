@@ -172,7 +172,12 @@ function joinRoom() {
   roomCode = code; myToken = localStorage.getItem('catan_tk_' + code);
   connect(code, password);
 }
-$('#createBtn').onclick = () => { if (!name) return toast('先输入昵称'); connect(null); };
+$('#createBtn').onclick = async () => {
+  if (!name) return toast('先输入昵称');
+  const supportsProfiles = await botCatalogReady;
+  if (document.querySelector('[name="createMode"]:checked').value === 'ai-only' && !supportsProfiles) return toast('当前服务版本不支持纯 AI 观战，请重启服务后重试');
+  connect(null);
+};
 $('#joinBtn').onclick = joinRoom;
 $('#refreshRooms').onclick = loadRooms;
 loadRooms();
@@ -194,9 +199,11 @@ function showRoom(r) {
   setUnavailable($('#startBtn'), isHost ? '' : '只有房主可以开始游戏');
   $('#hostTip').textContent = isHost ? (aiOnly ? '全部席位由 AI 执行，你负责设置牌桌并观战；也可邀请朋友一起观看。' : '你是房主，可以修改设置并开启游戏') : '当前房主正在准备，只有房主可以修改设置和开启游戏';
   $('#startBtn').textContent = aiOnly ? '开始 AI 对局 →' : '启程，开始游戏 →';
-  soloMode.checked = r.settings.withBots;
-  botCount.value = String(r.settings.botCount);
-  botDifficulty.value = r.settings.botDifficulty;
+  // Old running servers serve the current assets but omit the newer AI settings.
+  // Preserve the local choices when those fields are absent from their room messages.
+  if (typeof r.settings.withBots === 'boolean') soloMode.checked = r.settings.withBots;
+  if (Number.isInteger(r.settings.botCount)) botCount.value = String(r.settings.botCount);
+  if (r.settings.botDifficulty) botDifficulty.value = r.settings.botDifficulty;
   syncBotOptions();
 }
 const settingKeys = {setMap:'mapSize',setVP:'targetVP',setBonus:'startBonus',setPassword:'password'};
@@ -210,12 +217,14 @@ let botProfiles = [
   {id:'llm',description:'由服务端配置的大模型决策，超时或无效动作时自动回退。'},
   {id:'rule',description:'使用本地规则策略，无需外部模型，行动更快。'},
 ];
-fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
+const botCatalogReady = fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
+  const selected = currentRoom?.settings.botDifficulty || botDifficulty.value || catalog.defaultDifficulty;
   botProfiles = catalog.profiles;
   botDifficulty.innerHTML = botProfiles.map(p => `<option value="${esc(p.id)}">${esc(p.label)}${p.id === catalog.defaultDifficulty ? '（默认）' : ''}</option>`).join('');
-  botDifficulty.value = currentRoom?.settings.botDifficulty || catalog.defaultDifficulty;
+  botDifficulty.value = selected;
   syncBotOptions();
-}).catch(() => {});
+  return true;
+}).catch(() => false);
 function syncBotOptions() {
   const aiOnly = currentRoom?.mode === 'ai-only';
   const isHost = currentRoom?.isHost ?? true;
@@ -223,6 +232,8 @@ function syncBotOptions() {
   const enabled = soloMode.checked;
   const spaces = aiOnly ? 8 : Math.max(0, 8 - (currentRoom?.players.length || 1));
   [...botCount.options].forEach(o => { o.disabled = +o.value > spaces || (aiOnly && +o.value < 2); o.hidden = o.disabled; });
+  if (!botCount.value) botCount.value = String(aiOnly ? 4 : 2);
+  if (!botDifficulty.value) botDifficulty.value = 'llm';
   if (+botCount.value > spaces) botCount.value = String(Math.max(aiOnly ? 2 : 1, spaces));
   soloMode.disabled = aiOnly || !isHost;
   soloMode.title = aiOnly ? 'AI 观战模式下所有席位都由机器人参与' : !isHost ? '只有房主可以设置 AI' : '';
@@ -236,7 +247,7 @@ botDifficulty.addEventListener('change', () => { syncBotOptions(); send({type:'s
 syncBotOptions();
 $('#startBtn').onclick = () => {
   const available = Math.max(0, 8 - (currentRoom?.players.length || 1));
-  const bots = soloMode.checked ? Array.from({ length: Math.min(available, +botCount.value || 1) }, () => ({ difficulty: botDifficulty.value })) : [];
+  const bots = soloMode.checked ? Array.from({ length: Math.min(available, +botCount.value || 1) }, () => ({ difficulty: botDifficulty.value, type: botDifficulty.value === 'rule' ? 'rule' : 'ai' })) : [];
   send({ type: 'start', bots });
 };
 $('#copyLink').onclick = () => copyLink();

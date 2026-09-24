@@ -40,6 +40,16 @@ try{
   await until("document.querySelector('#nameInput')");await screenshot('lobby-desktop');await viewport(390,844,true);await screenshot('lobby-mobile');await viewport(1440,960);
   await run("$('#nameInput').value='海岸旅人';$('#nameInput').dispatchEvent(new Event('input'));$('#createBtn').click()");
   await until("document.querySelector('#roomView')&&!$('#roomView').hidden");
+  // Reproduce a still-running older backend echoing room settings without AI fields.
+  await run("window._modernRoom=JSON.stringify(currentRoom);window._originalSend=send;window._legacyRoom={...currentRoom,settings:{mapSize:'small',targetVP:10,startBonus:'none'}};send=()=>{showRoom(_legacyRoom);return true};showRoom(_legacyRoom)");
+  await tapElement('#soloMode');
+  assert.equal(await run("$('#soloMode').checked"),true,'legacy room echo preserves robot checkbox');
+  assert.equal(await run("$('#botCount').value"),'2');assert.equal(await run("$('#botDifficulty').value"),'llm');
+  assert.equal(await run("$('#botDifficulty').disabled"),false,'legacy robot controls remain usable');
+  await tapElement('#soloMode');assert.equal(await run("$('#soloMode').checked"),false);
+  await run('send=_originalSend;showRoom(JSON.parse(_modernRoom))');
+  await tapElement('#soloMode');await until('currentRoom.settings.withBots===true');
+  assert.equal(await run("$('#soloMode').checked"),true,'modern room keeps checkbox after server response');
   for(const size of ['epic','twin','small']) {
     await run(`$('#setMap').value='${size}';$('#setMap').dispatchEvent(new Event('change'))`);
     await until(`currentRoom.settings.mapSize==='${size}'`);
