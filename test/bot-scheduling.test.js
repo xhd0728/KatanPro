@@ -32,3 +32,13 @@ test('等待真人弃牌时不空转，提交弃牌后 AI 恢复移动强盗',()
   assert.equal(playerAct(g,g.players[0].id,{type:'discard',res:{ore:4}}),null);
   assert.equal(nextBot(g,roster).gamePlayerId,g.players[5].id);
 });
+
+test('断线玩家进入临时托管后参与 Bot 调度，普通真人不参与',()=>{
+  const {g,roster}=waitingRoom();
+  g.discardQueue=[0];g.players[0].res.ore=8;g.bank.ore-=8;
+  assert.equal(nextBot(g,roster),null);
+  roster[0].botTakeover=true;
+  assert.equal(nextBot(g,roster).gamePlayerId,g.players[0].id);
+  const action=ruleBotAction(serialize(g,roster[0].gamePlayerId));
+  assert.equal(action.type,'discard');
+});

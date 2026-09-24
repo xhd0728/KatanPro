@@ -16,6 +16,9 @@ import { DEFAULT_BOT_DIFFICULTY, getBotProfile, listBotProfiles } from './bots/p
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
+const configuredTakeoverMs = Number(process.env.CATAN_DISCONNECT_TAKEOVER_MS || 15000);
+const DISCONNECT_TAKEOVER_MS = Number.isFinite(configuredTakeoverMs) && configuredTakeoverMs >= 0
+  ? Math.floor(configuredTakeoverMs) : 15000;
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('PORT 必须是 1–65535 的整数');
 const AI_CONFIG = { ...DEFAULT_AI_CONFIG };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
@@ -131,7 +134,10 @@ wss.on('connection', (ws, req) => {
   if (old) {
     const previous = old.ws;
     clearTimeout(old.disconnectTimer);
+    clearTimeout(old.takeoverTimer);
     clearTimeout(room.emptyTimer);
+    old.botTakeover = false;
+    old.controlEpoch = (old.controlEpoch || 0) + 1;
     old.ws = ws;
     attach(ws, room, old);
     if (previous && previous !== ws) previous.close(4001, 'seat resumed elsewhere');
@@ -191,12 +197,13 @@ async function runBot(room, bot) {
   const game = room.game;
   const offer = game.offer;
   const playerId = bot.gamePlayerId;
+  const controlEpoch = bot.controlEpoch || 0;
   const state = serialize(game, playerId);
   const fallback = ruleBotAction(state);
   if (!fallback) return;
   room.botBusy = true;
   try {
-    const action = await getBotProfile(bot.difficulty).decide({
+    const action = bot.botTakeover ? fallback : await getBotProfile(bot.difficulty).decide({
       state, config: AI_CONFIG, fallback,
       onFallback: reason => {
         if (room.game === game && bot.lastFallbackReason !== reason) addLog(game, null, `${bot.name}：${reason}，已由规则机器人接手`);
@@ -204,7 +211,7 @@ async function runBot(room, bot) {
       },
     });
     if (action !== fallback) bot.lastFallbackReason = null;
-    if (room.game !== game || bot.gamePlayerId !== playerId || game.winner != null) return;
+    if (room.game !== game || bot.gamePlayerId !== playerId || (bot.controlEpoch || 0) !== controlEpoch || game.winner != null) return;
     // A slow model response must never accept a replacement offer's different terms.
     if (offer && offer !== game.offer && ['acceptOffer', 'rejectOffer'].includes(action?.type)) return;
     const err = playerAct(game, playerId, action || fallback);
@@ -241,7 +248,7 @@ function createRoom(requestedMode) {
   return code;
 }
 function joinPlayer(room, ws, name) {
-  const pl = { ws, name, token: randomBytes(8).toString('base64url'), kind: 'human', gamePlayerId: null, gp() { return room.game ? room.game.players.find(p => p.id === pl.gamePlayerId) : null; } };
+  const pl = { ws, name, token: randomBytes(8).toString('base64url'), kind: 'human', gamePlayerId: null, botTakeover: false, controlEpoch: 0, gp() { return room.game ? room.game.players.find(p => p.id === pl.gamePlayerId) : null; } };
   room.players.push(pl);
   if (!room.hostToken) room.hostToken = pl.token;
   ws.__pl = pl; ws.__room = room;
@@ -346,11 +353,16 @@ function onDisconnect(ws) {
     }, 45000);
     pl.disconnectTimer.unref();
   } else {
-    if (room.game.phase === 'setup') { // 摆放阶段直接换成人机继续太难，保留等待
-      addLog(room.game, pl.gp(), `${pl.name} 断线，等待重连`);
-    } else {
-      addLog(room.game, pl.gp(), `${pl.name} 断线`);
-    }
+    addLog(room.game, pl.gp(), `${pl.name} 断线，${Math.ceil(DISCONNECT_TAKEOVER_MS / 1000)} 秒后由规则机器人暂时接管`);
+    clearTimeout(pl.takeoverTimer);
+    pl.takeoverTimer = setTimeout(() => {
+      if (pl.ws || pl.botTakeover || !room.game || room.game.winner != null) return;
+      pl.botTakeover = true;
+      pl.controlEpoch = (pl.controlEpoch || 0) + 1;
+      addLog(room.game, pl.gp(), `${pl.name} 暂时离线，规则机器人已接管`);
+      broadcast(room);
+    }, DISCONNECT_TAKEOVER_MS);
+    pl.takeoverTimer.unref();
     broadcast(room);
     scheduleEmptyRoomCleanup(room);
   }

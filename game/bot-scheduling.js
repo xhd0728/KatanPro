@@ -15,5 +15,5 @@ export function botNeedsAction(game, playerId) {
 
 export function nextBot(game, players) {
   if (!game || game.winner != null) return null;
-  return players.find(p => p.kind === 'bot' && p.gamePlayerId != null && botNeedsAction(game, p.gamePlayerId)) || null;
+  return players.find(p => (p.kind === 'bot' || p.botTakeover) && p.gamePlayerId != null && botNeedsAction(game, p.gamePlayerId)) || null;
 }
