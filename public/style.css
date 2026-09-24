@@ -881,14 +881,15 @@ input[type=checkbox] {
 .pcard {
   background:#f7f8f2;
   border:1px solid #e7ebdf;
+  border-left:4px solid var(--player-color);
   border-radius:11px;
   padding:12px 11px;
   position:relative;
 }
 
 .pcard.cur {
-  background:#eef3e8;
-  border-color:#a9c2a7;
+  background:color-mix(in srgb,var(--player-color),white 94%);
+  border-color:var(--player-color);
 }
 
 .pcard .top {
@@ -903,11 +904,11 @@ input[type=checkbox] {
   display:grid;
   place-items:center;
   border-radius:9px;
-  background:color-mix(in srgb,var(--player-color),white 85%);
-  color:var(--player-color);
+  background:var(--player-color);
+  color:#fff;
   font-size:12px;
   font-weight:700;
-  border:1px solid color-mix(in srgb,var(--player-color),white 70%);
+  border:1px solid color-mix(in srgb,var(--player-color),black 18%);
 }
 
 .pcard .nm {
@@ -974,7 +975,7 @@ input[type=checkbox] {
   display:block;
   border-radius:4px;
   background:var(--player-color);
-  opacity:.75;
+  opacity:1;
 }
 
 .dot {
@@ -1205,28 +1206,28 @@ input[type=checkbox] {
 }
 
 .res-wood {
-  --resource-bg:#e6eee1;
-  --resource-border:#c3d4ba;
+  --resource-bg:#dcebd4;
+  --resource-border:#94b787;
 }
 
 .res-brick {
-  --resource-bg:#f3e7de;
-  --resource-border:#ddc4b2;
+  --resource-bg:#f3ddd0;
+  --resource-border:#c78e6a;
 }
 
 .res-sheep {
-  --resource-bg:#eff0da;
-  --resource-border:#d6dabb;
+  --resource-bg:#e8efc8;
+  --resource-border:#b0c276;
 }
 
 .res-wheat {
-  --resource-bg:#f7efda;
-  --resource-border:#e6d8b0;
+  --resource-bg:#f6e7b9;
+  --resource-border:#d4b758;
 }
 
 .res-ore {
-  --resource-bg:#e8edef;
-  --resource-border:#c7d5db;
+  --resource-bg:#dde7ef;
+  --resource-border:#a3b8c9;
 }
 
 .hand-dev {

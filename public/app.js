@@ -7,6 +7,12 @@ const HEXC = { wood: '#33513e', brick: '#96523f', sheep: '#6b8a55', wheat: '#b39
 const DEV = { knight: ['骑士', '🛡️'], vp: ['胜利点', '⭐'], road: ['筑路工', '🛤️'], year: ['丰收之年', '🌻'], mono: ['垄断之年', '🏦'] };
 const DICEU = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 const BANK_SIZE = 29;
+// Presentation-only mapping also updates pieces in games held by an older server.
+const PLAYER_COLOR_DISPLAY = {
+  '#c05f4f':'#cf342d', '#3f7b9b':'#1763c0', '#568361':'#197344', '#b5843e':'#b95d00',
+  '#896699':'#733bb3', '#a69836':'#92720a', '#378c85':'#00838b', '#b45f85':'#c32e7a',
+};
+const playerColor = color => PLAYER_COLOR_DISPLAY[color] || color;
 const MAP_NAMES = {small:'小地图',medium:'中地图',large:'大地图',epic:'超大大陆',twin:'双岛地峡'};
 const MAP_DESCRIPTIONS = {
   small:'19 块地形 · 9 座港口。紧凑的经典岛屿，适合 2–4 人。',
@@ -287,6 +293,9 @@ function me() { return S && S.viewer >= 0 ? S.players[S.viewer] : null; }
 
 let winDismissed = false;
 function render() {
+  S.players.forEach(p => { p.color = playerColor(p.color); });
+  S.log.forEach(entry => { entry.color = playerColor(entry.color); });
+  if (S.offer) S.offer.fromColor = playerColor(S.offer.fromColor);
   const spectating = !me();
   if ($('#game').classList.contains('spectating') !== spectating) needResizeFit = true;
   $('#game').classList.toggle('spectating', spectating);
@@ -315,7 +324,7 @@ function renderHeader() {
 }
 function renderSidebar() {
   $('#playerCards').innerHTML = S.players.map((p, i) => `<div class="pcard ${i === activePlayer() ? 'cur' : ''}" style="--player-color:${p.color}">
-    <div class="top"><span class="avatar">${esc(p.name.slice(0,1))}</span><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span><span class="vp"><b>${p.vp}</b>分</span></div>
+    <div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span><span class="vp"><b>${p.vp}</b>分</span></div>
     <div class="meta"><span>${icon('settlement')}${p.settlements}</span><span>${icon('city')}${p.cities}</span><span>${icon('road')}${p.roads}</span><span>${icon('cards')}${p.total} 张</span><span>${p.needDiscard ? '待弃牌' : p.kind === 'bot' ? 'AI / BOT' : `${p.devCount} 发展卡`}</span></div>
     <div class="score-track"><span style="width:${Math.min(100,p.vp/S.settings.targetVP*100)}%"></span></div></div>`).join('');
   $('#badgeBar').innerHTML = `<div class="achievement">${icon('road')} 最长道路 · +2<b>${esc(S.longest.name || '等待 5 段连路')}${S.longest.len ? ' · ' + S.longest.len + ' 段' : ''}</b></div><div class="achievement">${icon('knight')} 最大骑士团 · +2<b>${esc(S.army.name || '等待 3 张骑士')}</b></div>`;
@@ -648,12 +657,12 @@ function syncRobberMotion(previous, next) {
 
 // 地形调色板：[描边、底色、受光面]
 const PAL = {
-  wood: ['#759c83', '#92b39a', '#d3e2c3'],
-  brick: ['#c6987d', '#d9b096', '#f1d0ad'],
-  sheep: ['#b1bf8a', '#c6d49c', '#e3e7bf'],
-  wheat: ['#d5bc78', '#e4d095', '#f6e7bd'],
-  ore: ['#96acb7', '#b0c2c9', '#d8e2df'],
-  desert: ['#c5b28e', '#dfc9a1', '#f2e1bb'],
+  wood: ['#356b47', '#4f8c61', '#9bc783'],
+  brick: ['#a45330', '#c77749', '#e7a77d'],
+  sheep: ['#78963b', '#a6c66b', '#d4e5a2'],
+  wheat: ['#b08425', '#d8b33e', '#f1d371'],
+  ore: ['#536e8b', '#7895ad', '#b1c7d4'],
+  desert: ['#b49776', '#cfb28a', '#ead5b4'],
 };
 const resourceImages = Object.fromEntries([...RES, 'desert'].map(r => {
   const img = new Image(); img.onload = () => { if (S) drawBoard(); }; img.src = `/assets/${r}.svg`; return [r,img];
@@ -663,7 +672,7 @@ const resourceImages = Object.fromEntries([...RES, 'desert'].map(r => {
 const srOf = color => {
   const rgb = [1,3,5].map(i => parseInt(color.slice(i,i+2),16));
   const mix = (target, amount) => '#' + rgb.map(v => Math.round(v+(target-v)*amount).toString(16).padStart(2,'0')).join('');
-  return [mix(255,.24), color, mix(0,.3)];
+  return [mix(255,.12), color, mix(0,.38)];
 };
 
 // —— 原版路径数据 ——
@@ -854,8 +863,9 @@ function drawBoard() {
     ctx.save(); ctx.translate((x1 + x2) / 2, (y1 + y2) / 2); ctx.rotate(ang + Math.PI / 2); ctx.scale(k, k);
     const g = ctx.createLinearGradient(-23, 0, 23, 0);
     g.addColorStop(0, light); g.addColorStop(.4, main); g.addColorStop(.5, main); g.addColorStop(1, light);
+    ctx.strokeStyle = '#fffbed'; ctx.lineWidth = 12; ctx.lineJoin = 'round'; ctx.stroke(P_ROAD);
     ctx.fillStyle = g; ctx.fill(P_ROAD);
-    ctx.strokeStyle = dark; ctx.lineWidth = 3.6; ctx.lineJoin = 'round'; ctx.stroke(P_ROAD);
+    ctx.strokeStyle = dark; ctx.lineWidth = 4.8; ctx.stroke(P_ROAD);
     ctx.restore();
   }
 
@@ -912,6 +922,9 @@ function drawBoard() {
     const [light, main, dark] = srOf(color);
     ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.translate(-64, -64);
     ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#fffbed'; ctx.lineWidth = 11;
+    if (city) { ctx.stroke(P_CITY_F2); ctx.stroke(P_CITY_F1); }
+    else ctx.stroke(P_VILL_F);
     if (city) {
       const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
       g.addColorStop(0, light); g.addColorStop(1, main);
@@ -919,12 +932,12 @@ function drawBoard() {
       const g2 = ctx.createLinearGradient(0, 59, 0, 96);
       g2.addColorStop(.26, light); g2.addColorStop(.4, main);
       ctx.fillStyle = g2; ctx.fill(P_CITY_F1);
-      ctx.strokeStyle = dark; ctx.lineWidth = 3.6; ctx.stroke(P_CITY_S);
+      ctx.strokeStyle = dark; ctx.lineWidth = 4.8; ctx.stroke(P_CITY_S);
     } else {
       const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 58);
       g.addColorStop(0, light); g.addColorStop(1, main);
       ctx.fillStyle = g; ctx.fill(P_VILL_F);
-      ctx.strokeStyle = dark; ctx.lineWidth = 3.6; ctx.stroke(P_VILL_S);
+      ctx.strokeStyle = dark; ctx.lineWidth = 4.8; ctx.stroke(P_VILL_S);
     }
     ctx.restore();
   }

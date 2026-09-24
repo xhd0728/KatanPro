@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import WebSocket from 'ws';
-import {createGame,serialize} from '../game/engine.js';
+import {createGame,serialize,playerAct} from '../game/engine.js';
+import {ruleBotAction} from '../bot.js';
 const chromeBin=process.env.CHROME_BIN || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/usr/bin/google-chrome','/usr/bin/chromium'].find(p=>fs.existsSync(p));
 if(!chromeBin) throw new Error('Set CHROME_BIN to a Chrome/Chromium executable.');
 const port=22000+Math.floor(Math.random()*8000),origin=`http://127.0.0.1:${port}`;
@@ -183,8 +184,12 @@ try{
       await screenshot(`map-${mapSize}-${name}`);
     }
   }
-  const crowded=createGame({mapSize:'small',targetVP:10,startBonus:'none',playerNames:Array.from({length:8},(_,i)=>'开拓者 '+(i+1))});
-  crowded.phase='play';crowded.log=Array.from({length:50},(_,i)=>({name:'系统',text:'布局检查日志 '+i}));
+  const crowded=createGame({mapSize:'large',targetVP:10,startBonus:'none',playerNames:Array.from({length:8},(_,i)=>'开拓者 '+(i+1))});
+  while(crowded.phase==='setup') {
+    const index=serialize(crowded,null).legal.setupPlayer,id=crowded.players[index].id;
+    assert.equal(playerAct(crowded,id,ruleBotAction(serialize(crowded,id))),null);
+  }
+  crowded.log=Array.from({length:50},(_,i)=>({name:'系统',text:'布局检查日志 '+i}));
   await viewport(1280,720);
   await run(`S=${JSON.stringify(serialize(crowded,crowded.players[0].id))};render();$('#diceStats').hidden=false;renderStats();$('#side').scrollTop=$('#side').scrollHeight;$('#log').scrollTop=$('#log').scrollHeight`);
   assert.equal(await run("(()=>{const s=$('#side').getBoundingClientRect();return ['#handTray','#actionbar'].every(id=>$(id).getBoundingClientRect().right<=s.left+1)&&s.bottom<=innerHeight})()"),true,'desktop controls never overlap sidebar');
@@ -196,6 +201,9 @@ try{
   if(await run("matchMedia('(hover:hover) and (pointer:fine)').matches")) assert.ok(await run("parseFloat($('.hand-card').style.getPropertyValue('--dock-scale'))")>1,'mouse proximity magnifies dock icons');
   assert.equal(await run("({h:$('#handTray').offsetHeight,a:$('#actionbar').offsetHeight})").then(v=>JSON.stringify(v)),JSON.stringify(dockSize),'dock hover preserves board layout');
   await screenshot('dock-desktop');
+  assert.deepEqual(await run("[...document.querySelectorAll('.avatar')].map(e=>e.textContent)"),['1','2','3','4','5','6','7','8'],'player numbers supplement color identity');
+  await viewport(1440,960);await run("$('#diceStats').hidden=true;$('#side').scrollTop=0;render()");await screenshot('players-contrast-desktop');
+  await viewport(390,844,true);await screenshot('players-contrast-mobile');
   await call('Page.navigate',{url:origin});await until("document.querySelector('[name=createMode]')");
   await run("document.querySelector('[name=createMode][value=\"ai-only\"]').checked=true;$('#createBtn').click()");
   await until("typeof currentRoom!=='undefined'&&currentRoom?.mode==='ai-only'");
