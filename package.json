@@ -10,10 +10,15 @@
   },
   "scripts": {
     "start": "node server.js",
+    "build": "node scripts/build-sea.mjs",
     "test": "node --test test/*.test.js",
     "test:ui": "node test/ui-smoke.mjs"
   },
   "dependencies": {
     "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6"
   }
 }

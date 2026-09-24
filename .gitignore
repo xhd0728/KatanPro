@@ -6,3 +6,4 @@ REVIEW.md
 !.env.example
 
 artifacts/
+dist/

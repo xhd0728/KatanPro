@@ -3,6 +3,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { WebSocketServer } from 'ws';
 import { randomBytes } from 'crypto';
 import { createGame, playerAct, serialize, addLog } from './game/engine.js';
@@ -24,6 +25,25 @@ const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // 4 位纯大写房间码
 const genCode = () => Array.from(randomBytes(4)).map(b => CODE_CHARS[b % CODE_CHARS.length]).join('');
 const publicDir = path.resolve(__dirname, 'public');
 
+// SEA 单文件模式下 public/ 内嵌在可执行文件中；源码运行时这里为空、只走磁盘。
+// 若可执行文件旁存在 public/ 目录，磁盘文件优先，便于部署时覆盖前端资源。
+// node:sea API：getRawAsset 自 v21.7，getAssetKeys 自 v22.20/v24.8；
+// 更早的运行时用内嵌的 manifest 清单配合 getAsset 读取。产物内嵌的是构建时的运行时。
+const embeddedAssets = (() => {
+  try {
+    const sea = createRequire(import.meta.url)('node:sea');
+    if (!sea.isSea()) return {};
+    const map = {};
+    if (typeof sea.getAssetKeys === 'function') {
+      for (const key of sea.getAssetKeys()) map[key] = Buffer.from(sea.getRawAsset(key));
+    } else {
+      const manifest = JSON.parse(sea.getAsset('manifest', 'utf8'));
+      for (const key of manifest.files) map['public/' + key] = Buffer.from(sea.getRawAsset('public/' + key));
+    }
+    return map;
+  } catch { return {}; }
+})();
+
 const server = http.createServer((req, res) => {
   let p;
   try { p = decodeURIComponent(req.url.split('?')[0]); }
@@ -41,7 +61,13 @@ const server = http.createServer((req, res) => {
   const file = path.resolve(publicDir, '.' + p);
   if (file !== publicDir && !file.startsWith(publicDir + path.sep)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('not found'); }
+    if (err) {
+      const key = 'public/' + path.relative(publicDir, file).split(path.sep).join('/');
+      const asset = embeddedAssets[key];
+      if (asset == null) { res.writeHead(404); return res.end('not found'); }
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+      return res.end(asset);
+    }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
     res.end(data);
   });
