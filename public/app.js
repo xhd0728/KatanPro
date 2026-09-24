@@ -295,6 +295,21 @@ function renderHand() {
   const m = me();
   $('#handTray').innerHTML = m ? `<div class="hand-label"><span class="eyebrow">你的资源</span><b>${m.total}<small>张手牌</small></b></div>${RES.map(r => `<div class="hand-card res-${r} ${m.res[r] ? '' : 'empty'}" title="${CN[r]} ${m.res[r]} 张"><span class="hand-count">${m.res[r]}</span>${resourceIcon(r)}<span class="hand-card-name">${CN[r]}</span></div>`).join('')}<button class="hand-dev" onclick="openCards()" aria-label="查看我的发展卡">${icon('cards')}<strong>${m.devCount}</strong><span>发展卡</span></button>` : '<span class="waitmsg">你正在观战 · 资源手牌仅对持有者可见</span>';
 }
+for (const dock of [$('#handTray'), $('#actionbar')]) {
+  const items = () => dock.querySelectorAll('.hand-card,.hand-dev,.abtn');
+  const reset = () => items().forEach(item => { item.style.removeProperty('--dock-scale'); item.style.removeProperty('--dock-lift'); });
+  dock.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || !matchMedia('(hover:hover) and (pointer:fine)').matches || matchMedia('(prefers-reduced-motion:reduce)').matches) return reset();
+    items().forEach(item => {
+      const box = item.getBoundingClientRect();
+      const proximity = Math.max(0, 1 - Math.abs(e.clientX - box.x - box.width / 2) / 125);
+      item.style.setProperty('--dock-scale', String(1 + proximity * .075));
+      item.style.setProperty('--dock-lift', `${-proximity * 6}px`);
+    });
+  });
+  dock.addEventListener('pointerleave', reset);
+  dock.addEventListener('focusout', reset);
+}
 $('#mobileInfoBtn').onclick = () => {
   const open = $('#game').classList.toggle('info-open');
   $('#mobileInfoBtn').setAttribute('aria-expanded', String(open));

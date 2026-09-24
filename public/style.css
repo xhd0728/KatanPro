@@ -2656,3 +2656,50 @@ footer#actionbar {
   .abtn.end-btn { margin-left:0; }
   #offerBar { left:calc((100% - 295px)/2); }
 }
+
+/* Frosted docks share the island palette and keep their layout size while magnifying. */
+#game {
+  background:radial-gradient(ellipse at 30% 100%,#bcd9cc 0,transparent 65%),#dae8e1;
+}
+.hand-tray,footer#actionbar {
+  position:relative;
+  border:1px solid #ffffffc9;
+  background:linear-gradient(145deg,#ffffffbc,#f4f8eedb);
+  -webkit-backdrop-filter:blur(22px) saturate(1.3);
+  backdrop-filter:blur(22px) saturate(1.3);
+  box-shadow:inset 0 1px 0 #fff,0 6px 24px #274f4110;
+}
+.hand-tray { border-radius:22px 22px 0 0; }
+footer#actionbar { border-radius:0 0 22px 22px; border-top-color:#e1e9df; }
+.hand-card,.hand-dev,.abtn {
+  transform:translateY(var(--dock-lift,0px)) scale(var(--dock-scale,1));
+  transform-origin:50% 100%;
+  transition:transform .18s ease,background .18s,box-shadow .18s;
+}
+.hand-card,.hand-dev {
+  background:linear-gradient(145deg,#ffffffe6,color-mix(in srgb,var(--resource-bg,#edf2e4),transparent 12%));
+  box-shadow:inset 0 1px 0 #fff,0 4px 9px #264d3710;
+  border-color:color-mix(in srgb,var(--resource-border,#d4d9c7),white 25%);
+}
+@media (hover:hover) and (pointer:fine) {
+  .hand-card:hover,.hand-dev:hover,.abtn:hover { z-index:2; box-shadow:0 8px 16px #244c3820; }
+}
+@media (min-width:901px) and (min-height:501px), (min-width:1001px) {
+  .hand-tray,footer#actionbar {
+    height:calc(100% - 12px);
+    margin:0 14px;
+    align-self:center;
+    border-radius:22px;
+  }
+  .hand-tray { padding-block:7px; }
+  .hand-card,.hand-dev { height:82px; border-radius:15px; }
+  footer#actionbar { padding-block:8px; }
+  .abtn { border-radius:14px; }
+}
+@media (max-height:500px) and (orientation:landscape) and (max-width:1000px) {
+  .hand-tray { border-radius:18px 0 0 0; }
+  footer#actionbar { border-radius:0 0 0 18px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .hand-card,.hand-dev,.abtn { transform:none; }
+}

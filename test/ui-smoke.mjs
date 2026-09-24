@@ -180,6 +180,12 @@ try{
   assert.equal(await run("(()=>{const s=$('#side').getBoundingClientRect();return ['#handTray','#actionbar'].every(id=>$(id).getBoundingClientRect().right<=s.left+1)&&s.bottom<=innerHeight})()"),true,'desktop controls never overlap sidebar');
   assert.equal(await run("(()=>{const e=$('#log').lastElementChild,r=e.getBoundingClientRect();return r.bottom<=innerHeight&&document.elementFromPoint(r.x+10,r.y+r.height/2)?.closest('#log')!==null})()"),true,'last log remains visible with eight players and statistics');
   await screenshot('sidebar-eight-players');
+  const dockSize=await run("({h:$('#handTray').offsetHeight,a:$('#actionbar').offsetHeight})");
+  const dockCard=await run("(()=>{const r=$('.hand-card').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  await call('Input.dispatchMouseEvent',{type:'mouseMoved',...dockCard});await pause(200);
+  if(await run("matchMedia('(hover:hover) and (pointer:fine)').matches")) assert.ok(await run("parseFloat($('.hand-card').style.getPropertyValue('--dock-scale'))")>1,'mouse proximity magnifies dock icons');
+  assert.equal(await run("({h:$('#handTray').offsetHeight,a:$('#actionbar').offsetHeight})").then(v=>JSON.stringify(v)),JSON.stringify(dockSize),'dock hover preserves board layout');
+  await screenshot('dock-desktop');
   assert.deepEqual(errors,[],'browser runtime errors');
   console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],screenshots:output,browserErrors:errors},null,2));
 } finally {
