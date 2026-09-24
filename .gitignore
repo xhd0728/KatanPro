@@ -1,0 +1,8 @@
+node_modules/
+ai.config.local.js
+REVIEW.md
+.env
+.env.*
+!.env.example
+
+artifacts/

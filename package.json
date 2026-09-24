@@ -1,0 +1,17 @@
+{
+  "name": "catan",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "test:ui": "node test/ui-smoke.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}
