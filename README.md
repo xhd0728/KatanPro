@@ -55,6 +55,29 @@ systemd、文件传输与服务器加固步骤见 [DEPLOY.md](DEPLOY.md)。
 
 > 注意：房间与对局状态保存在内存中，重启服务会清空进行中的游戏。
 
+### 单文件可执行程序
+
+无需在目标机器安装 Node.js。项目内置基于 Node.js [Single Executable Application](https://nodejs.org/api/single-executable-applications.html) 的打包脚本，把 Node 运行时、服务端代码与前端资源打成**一个可执行文件**：
+
+```bash
+npm run build
+# 产物：dist/katanpro-<platform>-<arch>，例如 dist/katanpro-darwin-arm64
+```
+
+把产物拷贝到目标机器，`chmod +x` 后直接运行：
+
+```bash
+./katanpro-linux-x64
+# 等价于 npm start，同样读取 HOST / PORT 与同目录下的 .env
+```
+
+要点：
+
+- 前端资源（`public/`）已内嵌进二进制；若可执行文件旁存在 `public/` 目录，磁盘文件优先，便于免重新打包覆盖前端
+- `.env` 从可执行文件所在目录读取，与源码运行行为一致
+- 产物**与构建机的操作系统和 CPU 架构绑定**（Linux x64、macOS arm64 等需分别在对应环境构建，或用 CI 矩阵交叉产出）
+- 产物约 100 MB（含完整 Node 运行时）；追求更小体积可改用容器镜像方案
+
 ## 配置
 
 所有配置通过环境变量提供，服务端自动读取项目根目录的 `.env`（已列入 `.gitignore`，请勿提交真实密钥）。浏览器端不需要任何配置。

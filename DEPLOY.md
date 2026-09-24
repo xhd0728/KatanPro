@@ -90,3 +90,37 @@ sudo ufw allow 52001/tcp
 ```
 
 然后在手机或另一台电脑打开 `http://SERVER_IP:52001/`。`0.0.0.0` 是服务器监听所有 IPv4 网卡的地址，不是浏览器应访问的地址。房间和对局目前只在内存中，重启服务会清空它们。
+
+## 5. 备选：单文件可执行程序部署
+
+如果不想在服务器安装 Node.js，可以用 `npm run build` 生成自带运行时的单文件可执行程序（Node.js SEA）。产物与构建机的操作系统和 CPU 架构绑定：部署 Linux x64 服务器就需要在 Linux x64 环境（或对应容器）里构建。
+
+在**构建机**上运行（以 Linux x64 为例，macOS 产物名为 `katanpro-darwin-arm64`）：
+
+```bash
+cd /path/to/KatanPro
+npm ci
+npm run build   # 产物：dist/katanpro-linux-x64
+scp dist/katanpro-linux-x64 DEPLOY_USER@SERVER_IP:/opt/katanpro/
+scp .env DEPLOY_USER@SERVER_IP:/opt/katanpro/
+```
+
+在**服务器**上：
+
+```bash
+sudo mkdir -p /opt/katanpro && sudo chown "$(id -un):$(id -gn)" /opt/katanpro
+chmod +x /opt/katanpro/katanpro-linux-x64
+chmod 600 /opt/katanpro/.env
+HOST=0.0.0.0 PORT=52001 /opt/katanpro/katanpro-linux-x64
+```
+
+前端资源已内嵌在可执行文件中，无需传输 `public/`；如需临时覆盖前端，把 `public/` 目录放到可执行文件旁边即可（磁盘优先）。`.env` 从可执行文件所在目录读取。
+
+systemd 服务只需把上文单元文件中的 `ExecStart` 换成可执行文件路径，并删除 `WorkingDirectory` 以外的 Node 相关配置：
+
+```ini
+ExecStart=/opt/katanpro/katanpro-linux-x64
+```
+
+更新版本 = 重新构建并替换二进制，再 `sudo systemctl restart catan`。
+
