@@ -173,6 +173,13 @@ try{
       await screenshot(`map-${mapSize}-${name}`);
     }
   }
+  const crowded=createGame({mapSize:'small',targetVP:10,startBonus:'none',playerNames:Array.from({length:8},(_,i)=>'开拓者 '+(i+1))});
+  crowded.phase='play';crowded.log=Array.from({length:50},(_,i)=>({name:'系统',text:'布局检查日志 '+i}));
+  await viewport(1280,720);
+  await run(`S=${JSON.stringify(serialize(crowded,crowded.players[0].id))};render();$('#diceStats').hidden=false;renderStats();$('#side').scrollTop=$('#side').scrollHeight;$('#log').scrollTop=$('#log').scrollHeight`);
+  assert.equal(await run("(()=>{const s=$('#side').getBoundingClientRect();return ['#handTray','#actionbar'].every(id=>$(id).getBoundingClientRect().right<=s.left+1)&&s.bottom<=innerHeight})()"),true,'desktop controls never overlap sidebar');
+  assert.equal(await run("(()=>{const e=$('#log').lastElementChild,r=e.getBoundingClientRect();return r.bottom<=innerHeight&&document.elementFromPoint(r.x+10,r.y+r.height/2)?.closest('#log')!==null})()"),true,'last log remains visible with eight players and statistics');
+  await screenshot('sidebar-eight-players');
   assert.deepEqual(errors,[],'browser runtime errors');
   console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],screenshots:output,browserErrors:errors},null,2));
 } finally {
