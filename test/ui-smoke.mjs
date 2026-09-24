@@ -204,7 +204,8 @@ try{
   assert.deepEqual(await run("[...document.querySelectorAll('.avatar')].map(e=>e.textContent)"),['1','2','3','4','5','6','7','8'],'player numbers supplement color identity');
   await viewport(1440,960);await run("$('#diceStats').hidden=true;$('#side').scrollTop=0;render()");await screenshot('players-contrast-desktop');
   await viewport(390,844,true);await screenshot('players-contrast-mobile');
-  await call('Page.navigate',{url:origin});await until("document.querySelector('[name=createMode]')");
+  await call('Page.navigate',{url:origin+'/?ui-smoke=ai-only'});
+  await until("location.search==='?ui-smoke=ai-only' && document.readyState==='complete' && typeof $==='function' && !!document.querySelector('[name=createMode]')");
   await run("document.querySelector('[name=createMode][value=\"ai-only\"]').checked=true;$('#createBtn').click()");
   await until("typeof currentRoom!=='undefined'&&currentRoom?.mode==='ai-only'");
   assert.equal(await run("$('#botDifficulty').value"),'llm','large model is the default');
