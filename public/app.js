@@ -51,6 +51,53 @@ function toast(msg, ok) {
   $('#toasts').appendChild(d);
   setTimeout(() => d.remove(), 3400);
 }
+function unavailable(reason = '') {
+  return `aria-disabled="${!!reason}"${reason ? ` data-disabled-reason="${esc(reason)}" title="${esc(reason)}"` : ''}`;
+}
+function setUnavailable(button, reason = '') {
+  button.disabled = false;
+  button.setAttribute('aria-disabled', String(!!reason));
+  button.dataset.disabledReason = reason;
+  button.title = reason;
+}
+// Keep unavailable actions focusable and explain them on mouse, touch or keyboard activation.
+document.addEventListener('click', e => {
+  const button = e.target.closest('[aria-disabled="true"][data-disabled-reason]');
+  if (!button) return;
+  e.preventDefault(); e.stopImmediatePropagation(); toast(button.dataset.disabledReason);
+}, true);
+document.addEventListener('pointerdown', e => {
+  const field = e.target.closest('.fld,.checkline')?.querySelector(':disabled');
+  if (field) toast(field.title || '只有房主可以修改此设置');
+}, true);
+function resourceShortage(cost) {
+  const missing = RES.filter(r => (me()?.res?.[r] || 0) < (cost[r] || 0));
+  return missing.length ? '资源不足：还缺 ' + missing.map(r => `${CN[r]} ${cost[r] - (me()?.res?.[r] || 0)} 张`).join('、') : '';
+}
+function actionReason(action) {
+  const m = me();
+  if (!m) return '你正在观战，不能操作其他玩家的回合';
+  if (S.phase === 'over') return '本局已结束';
+  if (S.phase === 'setup') return '请先完成初始摆放';
+  if (S.viewer !== S.current) return '还没轮到你，请等待自己的回合';
+  if (S.discardCount) return m.needDiscard ? '请先选择并确认要弃掉的资源卡' : '请等待其他玩家完成弃牌';
+  if (S.robberPending) return '请先移动强盗';
+  if (S.stealPending) return '请先选择抢牌目标';
+  if (S.roadBuildLeft && action !== 'road') return '请先完成筑路工的免费道路';
+  if (action === 'roll') return S.rolled ? '本回合已经掷过骰子' : '';
+  if (!S.rolled && !(action === 'road' && S.roadBuildLeft)) return '请先掷骰子';
+  if (action === 'endTurn' && S.offer) return '请先等待交易回复，或取消当前提案';
+  const costs = {road:{wood:1,brick:1},settlement:{wood:1,brick:1,sheep:1,wheat:1},city:{wheat:2,ore:3},buyDev:{sheep:1,wheat:1,ore:1}};
+  if (!costs[action]) return '';
+  const limit = {road:[m.roads,15,'道路'],settlement:[m.settlements,5,'定居点'],city:[m.cities,4,'城市']}[action];
+  if (limit && limit[0] >= limit[1]) return `${limit[2]}已达到 ${limit[1]} 个的上限`;
+  if (action === 'buyDev' && !S.deckLeft) return '发展卡牌堆已空';
+  const missing = action === 'road' && S.roadBuildLeft ? '' : resourceShortage(costs[action]);
+  if (missing) return missing;
+  if (action === 'buyDev') return '';
+  if (S.legal?.[action]?.length) return '';
+  return {road:'没有可连接的空路段；道路不能穿过对手的建筑',settlement:'没有合法交点：需要连接自己的道路，且与其他建筑至少隔一条边',city:'没有可升级的定居点'}[action];
+}
 function connectionStatus(text, offline = false) {
   $('#connectionStatus').textContent = text;
   $('#connectionStatus').classList.toggle('offline', offline);
@@ -141,7 +188,7 @@ function showRoom(r) {
   $('#setMap').value = r.settings.mapSize; $('#setVP').value = r.settings.targetVP; $('#setBonus').value = r.settings.startBonus;
   $('#mapDescription').textContent = MAP_DESCRIPTIONS[r.settings.mapSize] || '';
   ['setMap', 'setVP', 'setBonus', 'setPassword'].forEach(id => $('#' + id).disabled = !isHost);
-  $('#startBtn').disabled = !isHost;
+  setUnavailable($('#startBtn'), isHost ? '' : '只有房主可以开始游戏');
   $('#hostTip').textContent = isHost ? '你是房主，可以修改设置并开启游戏' : '当前房主正在准备，只有房主可以修改设置和开启游戏';
   syncBotOptions();
 }
@@ -292,16 +339,16 @@ function renderActionBar() {
     return;
   }
   const myTurn = !!m && S.viewer === S.current && !S.eventPending;
-  const L = S.legal || {}, free = S.roadBuildLeft || 0;
-  const build = (mode,label,cost,allowed) => `<button class="btn abtn ${pickMode===mode?'active':''}" ${myTurn && allowed ? '' : 'disabled'} onclick="togglePick('${mode}')" aria-pressed="${pickMode===mode}"><span class="action-name">${icon(mode)}${label}</span><span class="cost">${cost}</span></button>`;
+  const free = S.roadBuildLeft || 0;
+  const build = (mode,label,cost) => `<button class="btn abtn ${pickMode===mode?'active':''}" ${unavailable(actionReason(mode))} onclick="togglePick('${mode}')" aria-pressed="${pickMode===mode}"><span class="action-name">${icon(mode)}${label}</span><span class="cost">${cost}</span></button>`;
   bar.innerHTML = `<span class="phase-step">${myTurn ? '轮到你了' : '等待对手'}<br>${S.rolled ? '交易与建设' : '掷骰与产出'}</span>
-    <button class="btn primary abtn rollbtn" ${!myTurn || S.rolled || free ? 'disabled' : ''} onclick="act({type:'roll'})"><span class="action-name">${icon('dice')}${S.rolled ? '已掷骰' : '掷骰子'}</span><span class="cost">${S.rolled && S.dice ? S.dice.a + ' + ' + S.dice.b : '开始你的回合'}</span></button>
-    ${build('road','道路',free ? '剩余 ' + free + ' 段免费' : '木 1 · 砖 1',(S.rolled || free) && L.road?.length)}
-    ${build('settlement','定居点','木 · 砖 · 羊 · 麦',S.rolled && !free && L.settlement?.length)}
-    ${build('city','城市','麦 2 · 矿 3',S.rolled && !free && L.city?.length)}
-    <button class="btn abtn" ${myTurn && S.rolled && !free && L.dev ? '' : 'disabled'} onclick="act({type:'buyDev'})"><span class="action-name">${icon('cards')}买发展卡</span><span class="cost">羊 1 · 麦 1 · 矿 1</span></button>
-    <button class="btn abtn" ${myTurn && S.rolled && !free ? '' : 'disabled'} onclick="openTrade()"><span class="action-name">${icon('trade')}交易</span><span class="cost">玩家 / 银行</span></button>
-    <button class="btn abtn end-btn" ${myTurn && S.rolled && !free && !S.offer ? '' : 'disabled'} onclick="act({type:'endTurn'})"><span class="action-name">结束回合 ${icon('end')}</span><span class="cost">交给下一位</span></button>`;
+    <button class="btn primary abtn rollbtn" ${unavailable(actionReason('roll'))} onclick="act({type:'roll'})"><span class="action-name">${icon('dice')}${S.rolled ? '已掷骰' : '掷骰子'}</span><span class="cost">${S.rolled && S.dice ? S.dice.a + ' + ' + S.dice.b : '开始你的回合'}</span></button>
+    ${build('road','道路',free ? '剩余 ' + free + ' 段免费' : '木 1 · 砖 1')}
+    ${build('settlement','定居点','木 · 砖 · 羊 · 麦')}
+    ${build('city','城市','麦 2 · 矿 3')}
+    <button class="btn abtn" ${unavailable(actionReason('buyDev'))} onclick="act({type:'buyDev'})"><span class="action-name">${icon('cards')}买发展卡</span><span class="cost">羊 1 · 麦 1 · 矿 1</span></button>
+    <button class="btn abtn" ${unavailable(actionReason('trade'))} onclick="openTrade()"><span class="action-name">${icon('trade')}交易</span><span class="cost">玩家 / 银行</span></button>
+    <button class="btn abtn end-btn" ${unavailable(actionReason('endTurn'))} onclick="act({type:'endTurn'})"><span class="action-name">结束回合 ${icon('end')}</span><span class="cost">交给下一位</span></button>`;
 }
 window.togglePick = (mode) => { pendingBuild = null; pickMode = pickMode === mode ? null : mode; render(); };
 window.act = act; window.send = send;
@@ -343,7 +390,7 @@ function renderOfferBar() {
     ? `<span class="waitmsg">等待 ${o.targets?.length || 0} 人回复</span><button class="btn tiny" onclick="act({type:'cancelOffer'})">取消</button>`
     : S.viewer < 0 ? '<span class="waitmsg">观战中</span>'
     : !o.targets?.includes(S.viewer) ? '<span class="waitmsg">未邀请你</span>'
-    : `<button class="btn tiny primary" ${!hasBundle(S.players[S.viewer].res, o.want) || S.eventPending ? 'disabled title="资源不足或当前事件尚未结束"' : ''} onclick="act({type:'acceptOffer'})">接受</button><button class="btn tiny" ${S.eventPending ? 'disabled' : ''} onclick="act({type:'rejectOffer'})">拒绝</button>`);
+    : `<button class="btn tiny primary" ${unavailable(S.eventPending ? '请先完成弃牌、移动强盗或抢牌' : resourceShortage(o.want))} onclick="act({type:'acceptOffer'})">接受</button><button class="btn tiny" ${unavailable(S.eventPending ? '请先完成当前事件' : '')} onclick="act({type:'rejectOffer'})">拒绝</button>`);
 }
 
 /* ---------- 弹窗 ---------- */
@@ -360,7 +407,7 @@ window.openCards = () => {
   const rows = Object.entries(types).filter(([t])=>c[t]>0).map(([t,[label,art,desc,action]])=> {
     const ready = c[t] - fresh.filter(x=>x===t).length;
     const reason = !turn ? '等待自己的回合' : S.eventPending || S.roadBuildLeft ? '先完成当前事件' : S.devPlayed ? '本回合已使用发展卡' : !ready ? '新购入 · 下回合可用' : t==='road' && !S.legal?.canPlayRoad ? '暂无可修建的道路' : '';
-    return `<div class="dev-card">${icon(art)}<h4>${label}<span>×${c[t]}</span></h4><p>${desc}</p><small>${reason || '可用 '+ready+' 张'}</small><button class="btn ${reason?'':'primary'}" ${reason?'disabled':''} onclick="${action}">${reason?'暂不可用':'打出这张卡'}</button></div>`;
+    return `<div class="dev-card">${icon(art)}<h4>${label}<span>×${c[t]}</span></h4><p>${desc}</p><small>${reason || '可用 '+ready+' 张'}</small><button class="btn ${reason?'':'primary'}" ${unavailable(reason)} onclick="${action}">${reason?'暂不可用':'打出这张卡'}</button></div>`;
   });
   openModal(`<span class="eyebrow">YOUR DEVELOPMENT</span><h3>每张卡，都是新的可能</h3><p class="tip">每回合可打一张行动发展卡，新购入的卡要等下回合。</p><div class="dev-grid">${rows.join('')}</div>${!rows.length ? '<div class="empty-state">还没有行动发展卡。<br>用羊毛、小麦、矿石各一张购买。</div>' : ''}<div class="dev-vp">胜利点卡 · ${me().dev.vp} 张 <span>已自动计入自己的分数</span></div><div class="mbtns"><button class="btn" onclick="closeModal()">返回棋盘</button></div>`, 'cards');
 };
@@ -369,16 +416,16 @@ window.openYear = () => {
     <div class="mrow">${RES.map(r => `<button class="btn year-choice" data-res="${r}" onclick="yearPick('${r}')">${resourceIcon(r)} ${CN[r]} <small>剩 ${S.bank?.[r] ?? 0}</small></button>`).join('')}</div>
     <div class="mrow">已选: <b id="yearSel">无</b><button class="text-btn" onclick="openYear()">重新选择</button></div>
     <div class="mbtns"><button class="btn" onclick="closeModal()">取消</button>
-    <button id="yearConfirm" class="btn primary" onclick="yearOk()" disabled>确认</button></div>`);
+    <button id="yearConfirm" class="btn primary" onclick="yearOk()" ${unavailable("请选择 2 张资源")}>确认</button></div>`);
   window._year = [];
   window.yearPick = (r) => {
     if (window._year.length >= 2 || window._year.filter(x => x === r).length >= (S.bank?.[r] || 0)) return;
     window._year.push(r);
     $('#yearSel').innerHTML = window._year.map(x => resourceIcon(x) + CN[x]).join(' + ');
-    $('#yearConfirm').disabled = window._year.length !== 2;
-    document.querySelectorAll('.year-choice').forEach(b => { b.disabled = window._year.length >= 2 || window._year.filter(x => x === b.dataset.res).length >= (S.bank?.[b.dataset.res] || 0); });
+    setUnavailable($('#yearConfirm'), window._year.length !== 2 ? '请选择 2 张资源' : '');
+    document.querySelectorAll('.year-choice').forEach(b => { setUnavailable(b, window._year.length >= 2 ? '已选满 2 张，请重新选择后再修改' : window._year.filter(x => x === b.dataset.res).length >= (S.bank?.[b.dataset.res] || 0) ? '银行的这类资源已选完' : ''); });
   };
-  document.querySelectorAll('.year-choice').forEach(b => { b.disabled = !S.bank?.[b.dataset.res]; });
+  document.querySelectorAll('.year-choice').forEach(b => { setUnavailable(b, !S.bank?.[b.dataset.res] ? '银行已没有这类资源' : ''); });
   window.yearOk = () => { if (window._year.length !== 2) return toast('请选择 2 张资源'); act({ type: 'playYear', r1: window._year[0], r2: window._year[1] }); closeModal(); };
 };
 window.openMono = () => {
@@ -408,7 +455,7 @@ window.openTrade = () => {
   const readBundle = prefix => Object.fromEntries(RES.map(res => [res, +$('#' + prefix + '_' + res).value]));
   const validBundle = b => RES.every(res => Number.isInteger(b[res]) && b[res] >= 0 && b[res] <= BANK_SIZE);
   const countBundle = b => RES.reduce((n, res) => n + b[res], 0);
-  window.tradeStep = (id, delta) => { const input = $('#' + id); input.value = Math.max(0, Math.min(+input.max, +input.value + delta)); updateTrade(); };
+  window.tradeStep = (id, delta) => { const input = $('#' + id); const next = +input.value + delta; if (next < 0) return toast('数量已经为 0'); if (next > +input.max) return toast(id.startsWith('give') ? '持有的这类资源已全部选中' : `每种资源最多 ${BANK_SIZE} 张`); input.value = next; updateTrade(); };
   const updateTrade = window.refreshTrade = () => {
     const r = me().res;
     const give = readBundle('give'), want = readBundle('want');
@@ -426,16 +473,15 @@ window.openTrade = () => {
     const bankGive = $('#bg').value, bankWant = $('#bw').value;
     $('#bankPreview').textContent = bankGive === bankWant ? '请选择两种不同的资源' : `成交后：${CN[bankGive]}剩 ${Math.max(0,r[bankGive] - rate(bankGive))} 张，${CN[bankWant]}共 ${r[bankWant] + 1} 张 · 银行${CN[bankWant]}余 ${Math.max(0,(S.bank?.[bankWant] || 0) - 1)} 张`;
     $('#tradePreview').textContent = `本次给出 ${countBundle(give)} 张，换回 ${countBundle(want)} 张 · 对方各类手牌保密，以实际回复为准`;
-    $('#bankConfirm').disabled = $('#bg').value === $('#bw').value || r[$('#bg').value] < rate($('#bg').value) || S.bank?.[$('#bw').value] < 1;
-    $('#offerConfirm').disabled = !!S.offer || !validBundle(give) || !validBundle(want) || !countBundle(give) || !countBundle(want) ||
-      RES.every(res => give[res] === want[res]) || !hasBundle(r, give) || !document.querySelector('.trade-target:checked');
+    setUnavailable($('#bankConfirm'), actionReason('trade') || (bankGive === bankWant ? '请选择两种不同的资源' : r[bankGive] < rate(bankGive) ? `资源不足：需要 ${rate(bankGive)} 张${CN[bankGive]}，当前只有 ${r[bankGive]} 张` : !S.bank?.[bankWant] ? `银行已没有${CN[bankWant]}` : ''));
+    setUnavailable($('#offerConfirm'), actionReason('trade') || (S.offer ? '请先等待或取消当前交易提案' : !validBundle(give) || !validBundle(want) ? '请选择有效的资源数量' : !countBundle(give) ? '请先选择要给出的资源' : !countBundle(want) ? '请先选择想要的资源' : RES.every(res => give[res] === want[res]) ? '给出和想要的资源不能完全相同' : resourceShortage(give) || (!document.querySelector('.trade-target:checked') ? '请至少选择一位交易对象' : '')));
   };
   ['#bg', '#bw'].forEach(id => $(id).addEventListener('input', updateTrade));
   document.querySelectorAll('.trade-grid input, .trade-target').forEach(input => input.addEventListener('input', updateTrade));
   updateTrade();
-  window.bankGo = () => { act({ type: 'bankTrade', give: $('#bg').value, want: $('#bw').value }); closeModal(); };
+  window.bankGo = () => { if ($('#bankConfirm').getAttribute('aria-disabled') === 'true') return toast($('#bankConfirm').dataset.disabledReason); act({ type: 'bankTrade', give: $('#bg').value, want: $('#bw').value }); closeModal(); };
   window.offerGo = () => {
-    if ($('#offerConfirm').disabled) return;
+    if ($('#offerConfirm').getAttribute('aria-disabled') === 'true') return toast($('#offerConfirm').dataset.disabledReason);
     const targets = [...document.querySelectorAll('.trade-target:checked')].map(x => +x.value);
     act({ type: 'offerTrade', give: readBundle('give'), want: readBundle('want'), targets }); closeModal();
   };
@@ -471,16 +517,16 @@ function renderModals() {
       openModal(`<div class="discard-head"><span class="discard-mark">🃏</span><div><h3>选择要弃的资源卡</h3><p>掷出 7 · 手牌 ${m.total} 张 · 需弃 ${need} 张</p></div></div>
         <div class="discard-progress"><span>已选 <b id="dSelected">0</b> / ${need}</span><span id="dLeft">再选 ${need} 张</span></div>
         <div class="discard-cards" id="discCards">${cards.map(({ r, i }) => `<button type="button" class="resource-card res-${r}" data-key="${r}-${i}" data-res="${r}" aria-pressed="false" aria-label="选择${CN[r]}卡"><span class="resource-card-art">${resourceIcon(r)}</span><span class="resource-card-name">${CN[r]}</span><span class="resource-card-check">✓</span></button>`).join('')}</div>
-        <div class="discard-actions"><button class="btn" id="discAuto" type="button">帮我选择</button><button class="btn primary" id="discOk" type="button" disabled>确认弃牌</button></div>`, 'discard');
+        <div class="discard-actions"><button class="btn" id="discAuto" type="button">帮我选择</button><button class="btn primary" id="discOk" type="button" ${unavailable(`请先选满 ${need} 张资源卡`)}>确认弃牌</button></div>`, 'discard');
       const refresh = () => {
         $('#dSelected').textContent = picked.size;
         $('#dLeft').textContent = picked.size === need ? '可以弃牌' : `再选 ${need - picked.size} 张`;
-        $('#discOk').disabled = picked.size !== need;
+        setUnavailable($('#discOk'), picked.size !== need ? `还需选择 ${need - picked.size} 张资源卡` : '');
         $('#discCards').querySelectorAll('.resource-card').forEach(card => {
           const selected = picked.has(card.dataset.key);
           card.classList.toggle('selected', selected);
           card.setAttribute('aria-pressed', String(selected));
-          card.disabled = !selected && picked.size >= need;
+          setUnavailable(card, !selected && picked.size >= need ? '已选够弃牌数量，可先取消一张再更换' : '');
         });
       };
       $('#discCards').addEventListener('click', e => {

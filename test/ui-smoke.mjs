@@ -90,10 +90,21 @@ try{
   assert.equal(await run("$('#want_state_ore').textContent"),'成交后 4 张');await run('closeModal()');
   // Isolated client fixtures exercise all card UI states without granting server resources.
   const snapshot=await run('JSON.stringify(S)');
+  await run("me().res={wood:0,brick:0,sheep:0,wheat:0,ore:0};S.rolled=true;S.roadBuildLeft=0;S.eventPending=false;S.discardCount=0;S.robberPending=false;S.stealPending=false;render()");
+  await tapElement('#actionbar button[onclick*="city"]');
+  assert.match(await run("$('#toasts').lastElementChild.textContent"),/还缺 小麦 2 张、矿石 3 张/);
+  assert.equal(await run('pickMode'),null,'unavailable build does not enter placement');
+  await tapElement('#actionbar .rollbtn');
+  assert.match(await run("$('#toasts').lastElementChild.textContent"),/已经掷过/);
+  await run('openTrade()');await tapElement('#bankConfirm');
+  assert.match(await run("$('#toasts').lastElementChild.textContent"),/资源不足/);
+  assert.equal(await run('modalKind'),'trade','unavailable bank action keeps the dialog open');
+  await tapElement('#offerConfirm');assert.match(await run("$('#toasts').lastElementChild.textContent"),/选择要给出/);
+  await run(`closeModal();S=JSON.parse(${JSON.stringify(snapshot)});render()`);
   await run("S.cards={knight:1,road:1,year:1,mono:1,fresh:['mono']};me().dev.vp=1;openCards()");await screenshot('development-mobile');assert.equal(await run("$('#modal').hidden"),false);await run('closeModal()');
   await run("me().res={wood:3,brick:2,sheep:2,wheat:1,ore:1};me().total=9;me().needDiscard=true;renderModals()");
   for(let i=1;i<=4;i++)await tapElement(`.resource-card:nth-child(${i})`);
-  assert.equal(await run("document.querySelectorAll('.resource-card.selected').length"),4);assert.equal(await run("$('#discOk').disabled"),false);await screenshot('discard-mobile');
+  assert.equal(await run("document.querySelectorAll('.resource-card.selected').length"),4);assert.equal(await run("$('#discOk').getAttribute('aria-disabled')"),'false');await screenshot('discard-mobile');
   await run(`closeModal();S=JSON.parse(${JSON.stringify(setupSnapshot)});render()`);
   await run('fitBoard();drawBoard()');
   const center=await run('(()=>{const r=cv.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,wx:(r.width/2-view.ox)/view.scale,wy:(r.height/2-view.oy)/view.scale,scale:view.scale}})()');

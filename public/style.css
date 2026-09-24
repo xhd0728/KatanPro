@@ -46,7 +46,7 @@ button {
   cursor:pointer;
 }
 
-button:disabled {
+button:disabled,button[aria-disabled="true"] {
   cursor:not-allowed;
   opacity:.42;
 }
@@ -77,13 +77,13 @@ a {
   font-weight:600;
 }
 
-.btn:hover:not(:disabled) {
+.btn:hover:not(:disabled):not([aria-disabled="true"]) {
   background:#eaf0e6;
   border-color:#b9cbbb;
   box-shadow:0 3px 9px #254d3710;
 }
 
-.btn:active:not(:disabled) {
+.btn:active:not(:disabled):not([aria-disabled="true"]) {
   transform:translateY(1px);
 }
 
@@ -94,7 +94,7 @@ a {
   box-shadow:0 4px 10px #17545619;
 }
 
-.btn.primary:hover:not(:disabled) {
+.btn.primary:hover:not(:disabled):not([aria-disabled="true"]) {
   background:#174e50;
 }
 
@@ -1766,7 +1766,7 @@ footer#actionbar {
   outline-offset:0;
 }
 
-.resource-card:disabled {
+.resource-card:disabled,.resource-card[aria-disabled="true"] {
   opacity:.4;
 }
 
@@ -2300,7 +2300,7 @@ footer#actionbar {
   .abtn.end-btn {
     margin-left:0;
   }
-  .abtn:disabled {
+  .abtn:disabled,.abtn[aria-disabled="true"] {
     opacity:.37;
   }
   .waitmsg {
