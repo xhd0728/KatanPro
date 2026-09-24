@@ -388,17 +388,19 @@ window.openMono = () => {
 };
 
 window.openTrade = () => {
-  const m = me(); const r = m.res || {}; const rates = m.ports || {};
-  const rate = (g) => rates[g] || 4;
-  const bundleInputs = (prefix, max) => RES.map(res => `<div class="trade-res-row"><span>${resourceIcon(res)} ${CN[res]}</span><div class="stepper"><button type="button" aria-label="减少${CN[res]}" onclick="tradeStep('${prefix}_${res}',-1)">−</button><input aria-label="${prefix==='give'?'给出':'想要'}${CN[res]}数量" id="${prefix}_${res}" type="number" min="0" max="${max(res)}" value="0" readonly tabindex="-1"><button type="button" aria-label="增加${CN[res]}" onclick="tradeStep('${prefix}_${res}',1)">＋</button></div></div>`).join('');
+  const m = me(); if (!m) return toast('观战时不能发起交易');
+  const r = m.res || {};
+  const rate = (g) => me().ports?.[g] || 4;
+  const bundleInputs = (prefix, max) => RES.map(res => `<div class="trade-res-row"><span class="trade-res-label">${resourceIcon(res)}<span>${CN[res]}<small id="${prefix}_state_${res}"></small></span></span><div class="stepper"><button type="button" aria-label="减少${CN[res]}" onclick="tradeStep('${prefix}_${res}',-1)">−</button><input aria-label="${prefix==='give'?'给出':'想要'}${CN[res]}数量" id="${prefix}_${res}" type="number" min="0" max="${max(res)}" value="0" readonly tabindex="-1"><button type="button" aria-label="增加${CN[res]}" onclick="tradeStep('${prefix}_${res}',1)">＋</button></div></div>`).join('');
   const targetInputs = S.players.map((p, i) => i === S.viewer ? '' : `<label class="trade-person"><input type="checkbox" class="trade-target" value="${i}" checked><span class="dot" style="background:${p.color}"></span>${esc(p.name)}</label>`).join('');
   openModal(`<div class="trade-scroll"><span class="eyebrow">A FAIR EXCHANGE</span><h3>让每一张资源，物尽其用</h3>
+    <div class="trade-inventory" aria-label="我的资源与银行库存">${RES.map(res => `<div class="res-${res}">${resourceIcon(res)}<span>${CN[res]}</span><strong id="stock_${res}"></strong><small id="bank_stock_${res}"></small></div>`).join('')}</div>
     <div class="trade-title">银行交易 <span>有港口时自动采用最优比例</span></div>
     <div class="mrow">出 <select id="bg"></select><b id="bn">4</b> 张 → 得 1 张 <select id="bw"></select>
-    <button id="bankConfirm" class="btn tiny primary" onclick="bankGo()">成交</button></div>
+    <button id="bankConfirm" class="btn tiny primary" onclick="bankGo()">成交</button></div><p id="bankPreview" class="trade-preview" aria-live="polite"></p>
     <div class="trade-title">玩家交易 <span>可组合多种资源</span></div>
     <div class="trade-grid"><div><b>我给出</b>${bundleInputs('give', res => r[res] || 0)}</div><div><b>我想要</b>${bundleInputs('want', () => BANK_SIZE)}</div></div>
-    <div class="trade-title">发送给</div><div class="trade-targets">${targetInputs}</div></div>
+    <p id="tradePreview" class="trade-preview" aria-live="polite"></p><div class="trade-title">发送给</div><div class="trade-targets">${targetInputs}</div></div>
     <div class="trade-actions"><button class="btn" onclick="closeModal()">关闭</button><button id="offerConfirm" class="btn primary" onclick="offerGo()">发出提案</button></div>`, 'trade');
   $('#bg').innerHTML = RES.map(x => `<option value="${x}">${CN[x]}（持有${r[x]}）</option>`).join('');
   $('#bw').innerHTML = RES.map(x => `<option value="${x}">${CN[x]}（银行${S.bank?.[x] ?? BANK_SIZE}）</option>`).join('');
@@ -409,10 +411,22 @@ window.openTrade = () => {
   window.tradeStep = (id, delta) => { const input = $('#' + id); input.value = Math.max(0, Math.min(+input.max, +input.value + delta)); updateTrade(); };
   const updateTrade = window.refreshTrade = () => {
     const r = me().res;
-    RES.forEach(res => $('#give_' + res).max = r[res]);
-    $('#bn').textContent = rate($('#bg').value);
-    $('#bankConfirm').disabled = $('#bg').value === $('#bw').value || r[$('#bg').value] < rate($('#bg').value) || S.bank?.[$('#bw').value] < 1;
     const give = readBundle('give'), want = readBundle('want');
+    RES.forEach(res => {
+      $('#give_' + res).max = r[res];
+      $('#stock_' + res).textContent = `持有 ${r[res]}`;
+      $('#bank_stock_' + res).textContent = `银行 ${S.bank?.[res] ?? 0}`;
+      $('#give_state_' + res).textContent = `选 ${give[res]} · 剩 ${Math.max(0,r[res] - give[res])}`;
+      $('#want_state_' + res).textContent = `成交后 ${r[res] - give[res] + want[res]} 张`;
+      $('#give_state_' + res).classList.toggle('shortage', give[res] > r[res]);
+      $('#bg').querySelector(`[value="${res}"]`).textContent = `${CN[res]}（持有 ${r[res]}）`;
+      $('#bw').querySelector(`[value="${res}"]`).textContent = `${CN[res]}（银行 ${S.bank?.[res] ?? 0}）`;
+    });
+    $('#bn').textContent = rate($('#bg').value);
+    const bankGive = $('#bg').value, bankWant = $('#bw').value;
+    $('#bankPreview').textContent = bankGive === bankWant ? '请选择两种不同的资源' : `成交后：${CN[bankGive]}剩 ${Math.max(0,r[bankGive] - rate(bankGive))} 张，${CN[bankWant]}共 ${r[bankWant] + 1} 张 · 银行${CN[bankWant]}余 ${Math.max(0,(S.bank?.[bankWant] || 0) - 1)} 张`;
+    $('#tradePreview').textContent = `本次给出 ${countBundle(give)} 张，换回 ${countBundle(want)} 张 · 对方各类手牌保密，以实际回复为准`;
+    $('#bankConfirm').disabled = $('#bg').value === $('#bw').value || r[$('#bg').value] < rate($('#bg').value) || S.bank?.[$('#bw').value] < 1;
     $('#offerConfirm').disabled = !!S.offer || !validBundle(give) || !validBundle(want) || !countBundle(give) || !countBundle(want) ||
       RES.every(res => give[res] === want[res]) || !hasBundle(r, give) || !document.querySelector('.trade-target:checked');
   };

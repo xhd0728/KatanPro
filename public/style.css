@@ -1534,8 +1534,32 @@ footer#actionbar {
 }
 
 .modal-card:has(.trade-grid) {
-  width:min(600px,96vw);
+  width:min(700px,96vw);
 }
+
+.trade-inventory {
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:6px;
+  margin:16px 0;
+}
+.trade-inventory>div {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:3px;
+  padding:9px 3px;
+  border:1px solid var(--resource-border);
+  background:var(--resource-bg);
+  border-radius:12px;
+  font-size:11px;
+}
+.trade-inventory .resource-icon { width:29px; height:28px; }
+.trade-inventory strong { font-size:12px; }
+.trade-inventory small,.trade-res-label small { color:#6c7e72; font-size:10px; }
+.trade-res-label small { display:block; margin-top:3px; white-space:nowrap; }
+.trade-res-label .shortage { color:#b35140; }
+.trade-preview { font-size:11px; line-height:1.7; color:#62796b; margin:10px 0 0; }
 
 .modal-card:has(.trade-scroll) {
   display:flex;

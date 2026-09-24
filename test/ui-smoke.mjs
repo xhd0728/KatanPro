@@ -79,7 +79,15 @@ try{
   await run('S.current=S.viewer;render();fitBoard();drawBoard()');
   await run("$('#mobileInfoBtn').click()");await screenshot('info-mobile');await run("$('#mobileInfoBtn').click()");
   await run('openTrade()');await screenshot('trade-mobile');
-  await tapElement('#want_ore + button');assert.equal(await run("$('#want_ore').value"),'1');await run('closeModal()');
+  await tapElement('#want_ore + button');assert.equal(await run("$('#want_ore').value"),'1');
+  assert.equal(await run("$('#stock_ore').textContent"),await run("'持有 '+me().res.ore"));
+  assert.equal(await run("$('#want_state_ore').textContent"),await run("'成交后 '+(me().res.ore+1)+' 张'"));
+  await run("me().res.ore=4;S.bank.ore=20;refreshTrade()");
+  assert.equal(await run("$('#stock_ore').textContent"),'持有 4');
+  assert.equal(await run("$('#bank_stock_ore').textContent"),'银行 20');
+  await tapElement('#give_ore + button');
+  assert.equal(await run("$('#give_state_ore').textContent"),'选 1 · 剩 3');
+  assert.equal(await run("$('#want_state_ore').textContent"),'成交后 4 张');await run('closeModal()');
   // Isolated client fixtures exercise all card UI states without granting server resources.
   const snapshot=await run('JSON.stringify(S)');
   await run("S.cards={knight:1,road:1,year:1,mono:1,fresh:['mono']};me().dev.vp=1;openCards()");await screenshot('development-mobile');assert.equal(await run("$('#modal').hidden"),false);await run('closeModal()');
