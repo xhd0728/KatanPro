@@ -58,6 +58,8 @@ test('结构化盘算只接受标签，公共日志不使用模型自由文本',
   assert.equal(normalizeBotCommentary({ avoid: '<script>', reason: '<script>' }), null);
   assert.deepEqual(normalizeAgentStep('{"tool":"inspectResources","args":{"goal":"city"}}'),
     { tool: 'inspectResources', args: { goal: 'city' } });
+  assert.deepEqual(normalizeAgentStep([{ type: 'text', text: '{"action":{"type":"endTurn"}}' }]).action,
+    { type: 'endTurn' });
 });
 
 test('最高档可查询两种工具，再提交和复核动作，调用数受限', async () => {
@@ -134,9 +136,67 @@ test('超长工具参数不会原样回灌模型上下文', async () => {
   try {
     assert.deepEqual(await getBotProfile('highest').decide({ state, fallback,
       config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' } }), fallback);
-    assert.equal(calls.length, 3, 'legal answer gets one review');
+    assert.equal(calls.length, 2, 'ordinary legal actions skip the extra review');
     assert.ok(calls[1].messages[1].content.length < 100);
     assert.match(calls[1].messages.at(-1).content, /参数过长/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('JSON 输出模式不兼容时仅协商一次，并保留动作合法性检查', async () => {
+  const g = readyGame(), p = g.players[g.current];
+  g.rolled = true;
+  const state = serialize(g, p.id), fallback = ruleBotAction(state);
+  const originalFetch = globalThis.fetch, requests = [], usage = [];
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push(body);
+    if (body.response_format) return { ok: false, status: 400 };
+    return { ok: true, async json() { return { choices: [{ message: { content: JSON.stringify({ action: fallback }) } }] }; } };
+  };
+  try {
+    const args = { state, fallback, config: { baseUrl: 'http://json-mode-unsupported/v1', model: 'mock', apiKey: 'x' }, onUsage: n => usage.push(n) };
+    assert.deepEqual(await getBotProfile('high').decide(args), fallback);
+    assert.deepEqual(await getBotProfile('high').decide(args), fallback);
+    assert.equal(requests.length, 3);
+    assert.equal(requests[0].response_format.type, 'json_object');
+    assert.equal(requests[1].response_format, undefined);
+    assert.equal(requests[2].response_format, undefined);
+    assert.deepEqual(usage, [2, 1]);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('鉴权类 400 错误不会被误判为 JSON 模式不兼容', async () => {
+  const g = readyGame(), p = g.players[g.current];
+  g.rolled = true;
+  const state = serialize(g, p.id), fallback = ruleBotAction(state);
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => { requests++; return { ok: false, status: 400, async text() { return 'invalid api key'; } }; };
+  try {
+    const args = { state, fallback, config: { baseUrl: 'http://auth-error/v1', model: 'mock', apiKey: 'x' } };
+    await getBotProfile('high').decide(args);
+    await getBotProfile('high').decide(args);
+    assert.equal(requests, 2);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('普通合法动作只调用一次，非法模型动作在上限内修正', async () => {
+  const g = readyGame(), p = g.players[g.current];
+  g.rolled = true;
+  const state = serialize(g, p.id), fallback = ruleBotAction(state);
+  const originalFetch = globalThis.fetch, requests = [], phases = [];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    const value = requests.length === 1 ? { type: 'buildCity', vertex: 'impossible' } : fallback;
+    return { ok: true, async json() { return { choices: [{ message: { content: JSON.stringify(value) } }] }; } };
+  };
+  try {
+    assert.deepEqual(await getBotProfile('high').decide({ state, fallback,
+      config: { baseUrl: 'http://repair-test/v1', model: 'mock', apiKey: 'x' },
+      onProgress: status => phases.push(status.phase) }), fallback);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].response_format.type, 'json_object');
+    assert.deepEqual(phases, ['thinking', 'repair', 'continue']);
   } finally { globalThis.fetch = originalFetch; }
 });
 

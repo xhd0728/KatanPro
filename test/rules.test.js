@@ -223,16 +223,17 @@ test('五档 AI 难度使用不同的模型调用策略', async () => {
     for (const id of ['medium', 'high', 'very-high']) {
       const before = requests.length;
       assert.deepEqual(await getBotProfile(id).decide({ state, config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' }, fallback }), fallback);
-      assert.equal(requests.length - before, id === 'medium' ? 1 : 2);
+      assert.equal(requests.length - before, 1);
     }
     const beforeHighest = requests.length;
     assert.deepEqual(await getBotProfile('highest').decide({ state, config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' }, fallback }), fallback);
     assert.equal(requests.length - beforeHighest, 2);
-    assert.deepEqual(requests.map(r => r.temperature), [0.85, 0.55, 0.2, 0.3, 0.2, 0.15, 0.15]);
-    assert.ok(requests[3].messages[0].content.length > requests[0].messages[0].content.length);
+    assert.deepEqual(requests.map(r => r.temperature), [0.85, 0.55, 0.3, 0.15, 0.15]);
+    assert.ok(requests[2].messages[0].content.length > requests[0].messages[0].content.length);
+    assert.ok(requests.every(r => r.response_format?.type === 'json_object'));
     setup(g);
     assert.deepEqual(await getBotProfile('highest').decide({ state: serialize(g, g.players[0].id), config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' }, fallback: { type: 'roll' } }), { type: 'roll' });
-    assert.equal(requests.length, 7, '只有掷骰这一种选择时不消耗模型调用');
+    assert.equal(requests.length, 5, '只有掷骰这一种选择时不消耗模型调用');
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -14,6 +14,7 @@ const COSTS = [
   { priority: 10, cost: { wood: 1, brick: 1 } }
 ];
 const MAX_AI_RESPONSE_BYTES = 128 * 1024;
+const jsonModeSupport = new Map();
 function bestVertex(state, ids) {
   const byId = Object.fromEntries(state.map.vertices.map(v => [v.id, v]));
   const hex = Object.fromEntries(state.map.hexes.map(h => [h.id, h]));
@@ -171,6 +172,8 @@ export function ruleBotAction(state) {
 }
 
 function parseAIJson(value) {
+  if (Array.isArray(value)) value = value.filter(part => part?.type === 'text' && typeof part.text === 'string')
+    .map(part => part.text).join('');
   if (typeof value !== 'string') return value;
   const clean = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   try { return JSON.parse(clean); } catch { return null; }
@@ -373,7 +376,8 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     const toolInstructions = strategy.maxTools ? `可用的只读工具：${JSON.stringify(AGENT_TOOLS)}。最多查询${strategy.maxTools}次。工具调用格式：{"tool":"inspectHistory","args":{"limit":8}}。` : '';
     const agentInstructions = strategy.agentLoop ? `\n${toolInstructions}最终动作格式：{"action":{"type":"buildCity","vertex":"v1"},"plan":{"goal":"city"},"commentary":{"avoid":"road","reason":"urgentScore"}}。commentary 只用于公共日志，不写自由文本或私有手牌；avoid 可选 road/settlement/city/development/bankTrade/playerTrade/robber/endTurn，reason 可选 scarceResources/weakProduction/urgentScore/opponentLead/blockedRoute/handRisk/betterPort/timing。${planInstruction}也可直接返回普通 JSON 动作。当前可执行动作类型：${JSON.stringify(agentActionGuide(state))}。` : `\n${planInstruction}`;
     const prompt = `${task}${agentInstructions}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}\n历史与计划：${JSON.stringify(botMemoryContext(state, runtime.memory, strategy.historyLimit))}`;
-    const request = async (messages, temperature) => fetch(endpoint, {
+    const formatKey = `${endpoint}\n${model}`;
+    const request = async (messages, temperature, jsonMode = true) => fetch(endpoint, {
       method: 'POST',
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
@@ -384,6 +388,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
         max_tokens: strategy.agentLoop ? 640 : 512,
         enable_thinking: false,
         chat_template_kwargs: { enable_thinking: false },
+        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
         messages,
       })
     });
@@ -421,14 +426,30 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     const messages = [{ role: 'user', content: prompt }];
     const seenTools = new Set();
     for (let attempt = 0; attempt < maxCalls; attempt++) {
+      runtime.onProgress?.({ phase: attempt ? 'continue' : 'thinking', attempt: attempt + 1 });
       usedCalls++;
-      const response = await request(messages, attempt ? Math.min(0.2, strategy.temperature ?? 0.2) : strategy.temperature);
+      const temperature = attempt ? Math.min(0.2, strategy.temperature ?? 0.2) : strategy.temperature;
+      let jsonMode = jsonModeSupport.get(formatKey) !== false;
+      let response = await request(messages, temperature, jsonMode);
+      // OpenAI-compatible gateways differ in JSON-mode support. Negotiate once
+      // per endpoint/model, then remember the result for subsequent decisions.
+      if (jsonMode && [400, 422].includes(response.status)) {
+        const errorText = typeof response.text === 'function' ? await response.text().catch(() => '') : '';
+        if (!errorText || /response.format|json.object|json.mode|unsupported.{0,50}format/i.test(errorText)) {
+          jsonModeSupport.set(formatKey, false);
+          runtime.onProgress?.({ phase: 'formatFallback' });
+          usedCalls++;
+          response = await request(messages, temperature, false);
+          jsonMode = false;
+        }
+      }
       if (!response.ok) {
         if (best) return finishBest();
         onFallback(`模型服务返回 ${response.status}`);
         return fallback;
       }
       const data = await readJson(response);
+      if (jsonMode) jsonModeSupport.set(formatKey, true);
       const content = data?.choices?.[0]?.message?.content;
       const step = normalizeAgentStep(content, state);
       if (step?.tool) {
@@ -438,7 +459,10 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
           ? { ok: false, error: '工具调用已达上限或重复；请立即选择动作' }
           : runAgentTool(state, step.tool, step.args);
         if (!oversized) seenTools.add(key);
-        if (result.ok) usedTools.push(step.tool);
+        if (result.ok) {
+          usedTools.push(step.tool);
+          runtime.onProgress?.({ phase: 'tool', tool: step.tool, attempt: attempt + 1 });
+        } else runtime.onProgress?.({ phase: 'repair', attempt: attempt + 1 });
         if (attempt < maxCalls - 1) {
           messages.push({ role: 'assistant', content: oversized ? '{"tool":"参数过长"}' : JSON.stringify({ tool: step.tool, args: step.args }) });
           messages.push({ role: 'user', content: `只读工具结果：${JSON.stringify(result)}。请根据结果返回最终合法动作，或在额度内再调用一个不同工具。` });
@@ -451,10 +475,14 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
         const unchanged = best && JSON.stringify(best.action) === JSON.stringify(action);
         best = { action, commentary: step.commentary || (unchanged ? best.commentary : null),
           plan: step.plan || (unchanged ? best.plan : null) };
-        if (!strategy.agentLoop || action.type === 'roll' || unchanged || attempt === maxCalls - 1) return finishBest();
+        const needsReview = strategy.id === 'highest' &&
+          ['placeSettlement', 'buildSettlement', 'buildCity', 'moveRobber', 'offerTrade', 'acceptOffer'].includes(action.type);
+        if (!strategy.agentLoop || !needsReview || unchanged || attempt === maxCalls - 1) return finishBest();
+        runtime.onProgress?.({ phase: 'review', attempt: attempt + 1 });
         messages.push({ role: 'assistant', content: JSON.stringify(action) });
         messages.push({ role: 'user', content: '复核这个合法动作：比较胜利点、产出、下一步建造资源、扩张路线和领先对手。不得假设对手隐藏手牌的种类。若它已是较好选择，原样返回；否则可查询尚未用过的工具，或返回一个更好的合法 JSON 动作。' });
       } else if (attempt < maxCalls - 1) {
+        runtime.onProgress?.({ phase: 'repair', attempt: attempt + 1 });
         messages.push({ role: 'assistant', content: typeof content === 'string' ? content.slice(0, 512) : '{}' });
         messages.push({ role: 'user', content: `上一个动作不符合当前阶段或资源约束。请根据已给状态修正，返回合法 JSON 动作；可使用建议动作 ${JSON.stringify(best?.action || fallback)}。` });
       }
