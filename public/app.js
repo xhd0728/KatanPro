@@ -334,7 +334,11 @@ function renderHeader() {
 function renderSidebar() {
   $('#playerCards').innerHTML = S.players.map((p, i) => `<div class="pcard ${i === activePlayer() ? 'cur' : ''}" style="--player-color:${p.color}">
     <div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span><span class="vp"><b>${p.vp}</b>分</span></div>
-    <div class="meta"><span>${icon('settlement')}${p.settlements}</span><span>${icon('city')}${p.cities}</span><span>${icon('road')}${p.roads}</span><span>${icon('cards')}${p.total} 张</span><span>${p.needDiscard ? '待弃牌' : p.kind === 'bot' ? 'AI / BOT' : `${p.devCount} 发展卡`}</span></div>
+    <div class="player-resources" aria-label="${esc(p.name)}的资源手牌共 ${p.total} 张">
+      <span class="player-resources-label">${icon('cards')} 资源手牌</span><strong>${p.total}<small>张</small></strong>${p.needDiscard ? '<span class="discard-badge">待弃牌</span>' : ''}
+    </div>
+    ${p.res ? `<div class="player-resource-types" aria-label="你的各类资源">${RES.map(r => `<span title="${CN[r]} ${p.res[r]} 张" aria-label="${CN[r]} ${p.res[r]} 张">${resourceIcon(r)}<b>${p.res[r]}</b></span>`).join('')}</div>` : ''}
+    <div class="meta"><span>${icon('settlement')}${p.settlements}</span><span>${icon('city')}${p.cities}</span><span>${icon('road')}${p.roads}</span><span>${p.kind === 'bot' ? 'AI / BOT' : `${p.devCount} 发展卡`}</span></div>
     <div class="score-track"><span style="width:${Math.min(100,p.vp/S.settings.targetVP*100)}%"></span></div></div>`).join('');
   $('#badgeBar').innerHTML = `<div class="achievement">${icon('road')} 最长道路 · +2<b>${esc(S.longest.name || '等待 5 段连路')}${S.longest.len ? ' · ' + S.longest.len + ' 段' : ''}</b></div><div class="achievement">${icon('knight')} 最大骑士团 · +2<b>${esc(S.army.name || '等待 3 张骑士')}</b></div>`;
   $('#bankBar').innerHTML = `<strong>银行储备 <span> / 每种共 ${BANK_SIZE} 张</span></strong>${RES.map(r => `<span title="${CN[r]}剩余 ${S.bank?.[r] ?? BANK_SIZE} 张">${resourceIcon(r)}${S.bank?.[r] ?? BANK_SIZE}</span>`).join('')}`;

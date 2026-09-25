@@ -203,6 +203,8 @@ try{
   assert.equal(await run("({h:$('#handTray').offsetHeight,a:$('#actionbar').offsetHeight})").then(v=>JSON.stringify(v)),JSON.stringify(dockSize),'dock hover preserves board layout');
   await screenshot('dock-desktop');
   assert.deepEqual(await run("[...document.querySelectorAll('.avatar')].map(e=>e.textContent)"),['1','2','3','4','5','6','7','8'],'player numbers supplement color identity');
+  assert.equal(await run("[...document.querySelectorAll('.pcard')].every((card,i)=>card.querySelector('.player-resources strong').textContent.includes(String(S.players[i].total)))"),true,'each player card makes the public resource total visible');
+  assert.equal(await run("document.querySelectorAll('.player-resource-types').length"),1,'only the local hand shows resource types');
   await viewport(1440,960);await run("$('#diceStats').hidden=true;$('#side').scrollTop=0;render()");await screenshot('players-contrast-desktop');
   await viewport(390,844,true);await screenshot('players-contrast-mobile');
   await call('Page.navigate',{url:origin+'/?ui-smoke=ai-only'});
@@ -215,6 +217,7 @@ try{
   await viewport(390,844,true);await screenshot('ai-room-mobile');await viewport(1440,960);await screenshot('ai-room-desktop');
   await run("$('#startBtn').click()");await until("typeof S!=='undefined'&&S?.phase==='play'",15000);
   assert.equal(await run('S.viewer'),-1);assert.equal(await run('S.players.every(p=>p.kind===\'bot\'&&p.res===null)'),true);
+  assert.equal(await run("document.querySelectorAll('.player-resource-types').length"),0,'spectator cards do not reveal hidden resource types');
   await screenshot('ai-spectator-desktop');
   await call('Page.reload');await until("typeof S!=='undefined'&&S?.viewer===-1");
   assert.equal(await run('currentRoom.isHost'),true,'spectator host survives reload');
