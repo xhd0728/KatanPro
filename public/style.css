@@ -942,89 +942,51 @@ input[type=checkbox] {
   margin-right:2px;
 }
 
-.player-resources {
+.pcard-metrics {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:4px;
+  margin-top:10px;
+}
+
+.pcard-metrics>div {
   display:flex;
   align-items:center;
-  gap:7px;
-  min-height:36px;
-  margin-top:10px;
-  padding:5px 9px;
-  border:1px solid color-mix(in srgb,var(--player-color),white 72%);
-  border-radius:8px;
+  justify-content:space-between;
+  min-width:0;
+  min-height:31px;
+  padding:4px 7px;
+  border:1px solid color-mix(in srgb,var(--player-color),white 78%);
+  border-radius:7px;
   background:#fffef9;
 }
 
-.player-resources-label {
-  display:inline-flex;
+.pcard-metrics span {
+  display:flex;
   align-items:center;
-  gap:5px;
-  color:#4a594b;
-  font-size:11px;
-  font-weight:650;
-}
-
-.player-resources-label .icon { width:15px; height:15px; }
-
-.player-resources strong {
-  margin-left:auto;
-  color:var(--ink);
-  font-size:20px;
-  line-height:1;
-  font-variant-numeric:tabular-nums;
-}
-
-.player-resources strong small {
-  margin-left:3px;
-  font-size:10px;
-  font-weight:500;
-}
-
-.discard-badge {
-  color:#a34332;
-  font-size:10px;
-  font-weight:650;
-}
-
-.player-resource-types {
-  display:grid;
-  grid-template-columns:repeat(5,minmax(0,1fr));
   gap:4px;
-  margin-top:6px;
+  white-space:nowrap;
+  color:#596958;
+  font-size:10px;
 }
 
-.player-resource-types>span {
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:3px;
-  min-width:0;
-  padding:3px 0;
-  border-radius:5px;
-  background:#eef2e8;
-  font-size:11px;
+.pcard-metrics .icon { width:12px; height:12px; flex:none; }
+
+.pcard-metrics strong {
+  color:var(--ink);
+  font-size:18px;
+  line-height:1.1;
   font-variant-numeric:tabular-nums;
 }
 
-.player-resource-types .resource-icon { width:17px; height:17px; }
-
-.pcard .meta {
+.pcard-details {
   display:flex;
-  align-items:center;
-  gap:9px;
-  color:#8b9785;
+  flex-wrap:wrap;
+  gap:3px 8px;
+  margin-top:7px;
+  color:#788475;
   font-size:10px;
-  margin-top:9px;
-}
-
-.pcard .meta>span {
-  display:inline-flex;
-  gap:3px;
-  align-items:center;
-}
-
-.pcard .meta .icon {
-  width:13px;
-  height:13px;
+  font-variant-numeric:tabular-nums;
 }
 
 .score-track {

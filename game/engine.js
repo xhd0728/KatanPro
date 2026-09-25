@@ -161,7 +161,7 @@ export function createGame(settings) {
     id: randomUUID().slice(0, 8), name, kind: playerKinds[i] || 'human', color: COLORS[i % COLORS.length],
     res: { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 },
     dev: { knight: 0, vp: 0, road: 0, year: 0, mono: 0 },
-    devFresh: [], knightsPlayed: 0,
+    devFresh: [], knightsPlayed: 0, robberMoves: 0,
     roads: [], settlements: [], cities: [],
   }));
   const n = players.length;
@@ -410,6 +410,7 @@ function moveRobber(g, pi, hexId) {
   if (!h) return '地块无效';
   if (hexId === g.map.robber) return '强盗必须换一块地';
   g.map.robber = hexId;
+  p.robberMoves = (p.robberMoves || 0) + 1;
   g.needMoveRobber = false;
   addLog(g, p, `把强盗移到了 ${RES_CN[h.resource]}${h.number ? `(${h.number})` : ''} 上`);
   const victims = g.players.filter((q, qi) => qi !== pi && total(q) > 0 &&
@@ -683,8 +684,9 @@ export function serialize(g, viewerId) {
       res: me ? p.res : null,
       devCount: Object.values(p.dev).reduce((a, b) => a + b, 0),
       dev: me ? p.dev : null,
-      knightsPlayed: p.knightsPlayed,
+      knightsPlayed: p.knightsPlayed, robberMoves: p.robberMoves || 0,
       settlements: p.settlements.length, cities: p.cities.length, roads: p.roads.length,
+      roadLength: longestRoadFor(g, p),
       cityVerts: p.cities, settleVerts: p.settlements, roadEdges: p.roads,
       vp: vpOf(g, p, me || g.phase === 'over'),
       current: i === g.current,

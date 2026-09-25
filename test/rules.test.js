@@ -176,6 +176,25 @@ test('最长路可在对手建筑处结束，不能从该点继续穿过', () =>
   assert.equal(playerAct(g, p.id, { type: 'buildRoad', edge: route.edges[4] }), null);
   assert.equal(g.longest.holder, 0);
   assert.equal(g.longest.len, 5);
+  assert.equal(serialize(g, p.id).players[0].roadLength, 5);
+});
+
+test('玩家统计区分骑士出牌与实际强盗移动次数', () => {
+  const g = game(2); setup(g);
+  const p = g.players[g.current], original = g.map.robber;
+  g.needMoveRobber = true;
+  assert.match(playerAct(g, p.id, { type: 'moveRobber', hex: original }), /必须换/);
+  assert.equal(p.robberMoves, 0);
+  const first = g.map.hexes.find(h => h.id !== original).id;
+  assert.equal(playerAct(g, p.id, { type: 'moveRobber', hex: first }), null);
+  assert.equal(serialize(g, null).players[g.current].robberMoves, 1);
+  g.stealFrom = []; g.pendingStealer = null;
+  p.dev.knight = 1;
+  assert.equal(playerAct(g, p.id, { type: 'playKnight' }), null);
+  assert.equal(p.knightsPlayed, 1);
+  const second = g.map.hexes.find(h => h.id !== first).id;
+  assert.equal(playerAct(g, p.id, { type: 'moveRobber', hex: second }), null);
+  assert.equal(serialize(g, null).players[g.current].robberMoves, 2);
 });
 
 test('AI 动作解析与阶段校验', () => {
