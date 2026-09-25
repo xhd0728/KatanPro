@@ -1,4 +1,6 @@
 import { RES, BANK_SIZE } from './game/engine.js';
+import { AGENT_TOOLS, runAgentTool } from './bots/agent-tools.js';
+import { normalizeBotCommentary } from './bots/narration.js';
 
 const pick = (items) => items[Math.floor(Math.random() * items.length)];
 export const canAffordBundle = (res, bundle) => !!res && !!bundle && RES.every(r => res[r] >= (bundle[r] || 0));
@@ -167,12 +169,14 @@ export function ruleBotAction(state) {
   return { type: 'endTurn' };
 }
 
+function parseAIJson(value) {
+  if (typeof value !== 'string') return value;
+  const clean = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try { return JSON.parse(clean); } catch { return null; }
+}
+
 export function normalizeAIAction(value) {
-  let action = value;
-  if (typeof value === 'string') {
-    const clean = value.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    try { action = JSON.parse(clean); } catch { return null; }
-  }
+  let action = parseAIJson(value);
   if (action?.action && typeof action.action === 'object') action = action.action;
   if (!action || typeof action !== 'object' || typeof action.type !== 'string') return null;
   const allowed = new Set([
@@ -181,6 +185,19 @@ export function normalizeAIAction(value) {
     'offerTrade', 'acceptOffer', 'rejectOffer', 'cancelOffer', 'discard', 'moveRobber', 'steal', 'endTurn'
   ]);
   return allowed.has(action.type) ? action : null;
+}
+
+export function normalizeAgentStep(value) {
+  const parsed = parseAIJson(value);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  if (typeof parsed.tool === 'string') {
+    if (parsed.action || parsed.type) return null;
+    return { tool: parsed.tool, args: parsed.args ?? {} };
+  }
+  const action = normalizeAIAction(parsed);
+  if (!action) return null;
+  const { commentary: _commentary, note: _note, ...cleanAction } = action;
+  return { action: cleanAction, commentary: normalizeBotCommentary(parsed.commentary ?? parsed.note) };
 }
 
 export function isUsefulAIAction(state, action) {
@@ -291,12 +308,48 @@ export function compactStateForAI(state, detail = 'compact') {
   };
 }
 
-export async function aiBotAction(state, config, fallback, onFallback = () => {}, strategy = {}) {
+function agentActionGuide(state) {
+  const me = state.players[state.viewer];
+  if (me?.needDiscard) return ['discard(res:各资源弃牌数)'];
+  if (state.phase === 'setup') return state.legal?.kind === 'settlement'
+    ? ['placeSettlement(vertex:合法交点)'] : ['placeRoad(edge:合法边)'];
+  if (state.stealFrom?.length) return ['steal(from:合法玩家编号)'];
+  if (state.needMoveRobber) return ['moveRobber(hex:非当前地块)'];
+  if (state.offer?.targets?.includes(state.viewer)) return ['acceptOffer', 'rejectOffer'];
+  if (state.offer?.from === state.viewer) return ['cancelOffer'];
+  if (state.roadBuildLeft) return ['buildRoad(edge:合法免费道路)'];
+  if (!state.rolled) return ['roll'];
+  const actions = [];
+  if (state.legal?.settlement?.length) actions.push('buildSettlement(vertex:合法交点)');
+  if (state.legal?.city?.length) actions.push('buildCity(vertex:合法交点)');
+  if (state.legal?.road?.length) actions.push('buildRoad(edge:合法边)');
+  if (state.legal?.dev) actions.push('buyDev');
+  if (!state.devPlayed) {
+    const cards = state.cards || {};
+    for (const [type, action] of [['knight', 'playKnight'], ['year', 'playYear(r1,r2)'],
+      ['mono', 'playMono(res)'], ['road', 'playRoad']]) {
+      if ((cards[type] || 0) > (cards.fresh || []).filter(card => card === type).length &&
+        (type !== 'road' || state.legal?.canPlayRoad)) actions.push(action);
+    }
+  }
+  if (RES.some(r => me.res[r] >= (me.ports?.[r] || 4)) && RES.some(r => (state.bank?.[r] || 0) > 0)) actions.push('bankTrade(give,want)');
+  if (state.players.length > 1 && RES.some(r => me.res[r] > 0)) actions.push('offerTrade(give:{资源:数量},want:{资源:数量},targets:[玩家编号])');
+  actions.push('endTurn');
+  return actions;
+}
+
+export async function aiBotAction(state, config, fallback, onFallback = () => {}, strategy = {}, onDecision = () => {}) {
   if (state.phase === 'play' && !state.rolled && fallback?.type === 'roll') return fallback;
   if (!config?.baseUrl || !config?.model || !config?.apiKey) { onFallback('模型配置不完整'); return fallback; }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(1000, Math.min(20000, Number(config.timeout) || 9000)));
+  const budget = (Number(config.timeout) || 9000) * (strategy.agentLoop ? 2 : 1);
+  const timeout = setTimeout(() => controller.abort(), Math.max(1000, Math.min(strategy.agentLoop ? 30000 : 20000, budget)));
   let best = null;
+  const usedTools = [];
+  const finishBest = () => {
+    if (strategy.agentLoop) onDecision({ action: best.action, commentary: best.commentary, tools: [...usedTools] });
+    return best.action;
+  };
   try {
     const endpoint = String(config.baseUrl).replace(/\/+$/, '') + '/chat/completions';
     let task;
@@ -309,8 +362,9 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     else if (state.offer && state.offer.targets?.includes(state.viewer) && !state.eventPending) task = '现在必须响应收到的交易：愿意且付得起返回 {"type":"acceptOffer"}，否则返回 {"type":"rejectOffer"}。只返回一个 JSON 动作。';
     else if (state.roadBuildLeft) task = '先完成筑路工：从 choices.road 中选择一条免费道路。只返回 JSON，例如 {"type":"buildRoad","edge":"e1"}。';
     else if (!state.rolled) task = '现在应先掷骰。只返回 JSON：{"type":"roll"}。';
-    else task = '卡坦岛当前回合。从 choices 中选合法位置，可建造、银行交易、买发展卡或结束回合。只返回一个 JSON 动作；不确定时返回建议动作。';
-    const prompt = `${task}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}`;
+    else task = '卡坦岛当前回合。可考虑定居点、城市、道路、发展卡、银行兑换、向玩家报价或结束回合。根据当前合法动作和 choices 选择一步；不确定时返回建议动作。';
+    const agentInstructions = strategy.agentLoop ? `\n可用的只读工具：${JSON.stringify(AGENT_TOOLS)}。最多查询两次，可先比较位置、资源、交易或强盗目标。工具调用格式：{"tool":"inspectResources","args":{"goal":"city"}}。最终动作格式：{"action":{"type":"buildCity","vertex":"v1"},"commentary":{"avoid":"road","reason":"urgentScore"}}。commentary 只用于公共日志，不写自由文本或私有手牌；avoid 可选 road/settlement/city/development/bankTrade/playerTrade/robber/endTurn，reason 可选 scarceResources/weakProduction/urgentScore/opponentLead/blockedRoute/handRisk/betterPort/timing。也可直接返回普通 JSON 动作。当前可执行动作类型：${JSON.stringify(agentActionGuide(state))}。` : '';
+    const prompt = `${task}${agentInstructions}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}`;
     const request = async (messages, temperature) => fetch(endpoint, {
       method: 'POST',
       signal: controller.signal,
@@ -319,7 +373,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
         model: config.model,
         temperature: temperature ?? strategy.temperature ?? 0.7,
         top_p: 0.8,
-        max_tokens: 512,
+        max_tokens: strategy.agentLoop ? 640 : 512,
         enable_thinking: false,
         chat_template_kwargs: { enable_thinking: false },
         messages,
@@ -357,34 +411,50 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     // At the highest difficulty, this bounded inner loop can repair or reconsider one
     // proposed action without mutating game state or reading opponents' hidden cards.
     const messages = [{ role: 'user', content: prompt }];
-    const maxCalls = strategy.agentLoop ? 3 : 1;
+    const maxCalls = strategy.agentLoop ? 5 : 1;
+    const seenTools = new Set();
     for (let attempt = 0; attempt < maxCalls; attempt++) {
       const response = await request(messages, attempt ? Math.min(0.2, strategy.temperature ?? 0.2) : strategy.temperature);
       if (!response.ok) {
-        if (best) return best;
+        if (best) return finishBest();
         onFallback(`模型服务返回 ${response.status}`);
         return fallback;
       }
       const data = await readJson(response);
       const content = data?.choices?.[0]?.message?.content;
-      const action = normalizeAIAction(content);
+      const step = strategy.agentLoop ? normalizeAgentStep(content) : { action: normalizeAIAction(content) };
+      if (step?.tool) {
+        const key = JSON.stringify([step.tool, step.args]);
+        const oversized = key.length > 1000;
+        const result = oversized ? { ok: false, error: '工具参数过长' } : usedTools.length >= 2 || seenTools.has(key)
+          ? { ok: false, error: '工具调用已达上限或重复；请立即选择动作' }
+          : runAgentTool(state, step.tool, step.args);
+        if (!oversized) seenTools.add(key);
+        if (result.ok) usedTools.push(step.tool);
+        if (attempt < maxCalls - 1) {
+          messages.push({ role: 'assistant', content: oversized ? '{"tool":"参数过长"}' : JSON.stringify({ tool: step.tool, args: step.args }) });
+          messages.push({ role: 'user', content: `只读工具结果：${JSON.stringify(result)}。请根据结果返回最终合法动作，或在额度内再调用一个不同工具。` });
+        }
+        continue;
+      }
+      const action = step?.action;
       const valid = isUsefulAIAction(state, action);
       if (valid) {
-        const unchanged = best && JSON.stringify(best) === JSON.stringify(action);
-        best = action;
-        if (!strategy.agentLoop || action.type === 'roll' || unchanged || attempt === maxCalls - 1) return action;
+        const unchanged = best && JSON.stringify(best.action) === JSON.stringify(action);
+        best = { action, commentary: step.commentary || (unchanged ? best.commentary : null) };
+        if (!strategy.agentLoop || action.type === 'roll' || unchanged || attempt === maxCalls - 1) return finishBest();
         messages.push({ role: 'assistant', content: JSON.stringify(action) });
-        messages.push({ role: 'user', content: '复核这个合法动作：比较胜利点、产出、下一步建造资源、扩张路线和领先对手。不得假设对手隐藏手牌的种类。若它已是较好选择，原样返回；否则返回一个更好的合法 JSON 动作。' });
+        messages.push({ role: 'user', content: '复核这个合法动作：比较胜利点、产出、下一步建造资源、扩张路线和领先对手。不得假设对手隐藏手牌的种类。若它已是较好选择，原样返回；否则可查询尚未用过的工具，或返回一个更好的合法 JSON 动作。' });
       } else if (attempt < maxCalls - 1) {
         messages.push({ role: 'assistant', content: typeof content === 'string' ? content.slice(0, 512) : '{}' });
-        messages.push({ role: 'user', content: `上一个动作不符合当前阶段或资源约束。请根据已给状态修正，只返回一个合法 JSON 动作；可使用建议动作 ${JSON.stringify(best || fallback)}。` });
+        messages.push({ role: 'user', content: `上一个动作不符合当前阶段或资源约束。请根据已给状态修正，返回合法 JSON 动作；可使用建议动作 ${JSON.stringify(best?.action || fallback)}。` });
       }
     }
-    if (best) return best;
+    if (best) return finishBest();
     onFallback('模型返回了当前阶段无效的操作');
     return fallback;
   } catch {
-    if (best) return best;
+    if (best) return finishBest();
     onFallback(controller.signal.aborted ? '模型响应超时' : '模型请求失败');
     return fallback;
   } finally {

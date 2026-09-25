@@ -12,6 +12,7 @@ import { DEFAULT_AI_CONFIG } from './config.js';
 import { MAP_LAYOUTS } from './game/map-layouts.js';
 import { nextBot } from './game/bot-scheduling.js';
 import { DEFAULT_BOT_DIFFICULTY, getBotProfile, listBotProfiles } from './bots/profiles.js';
+import { formatBotCommentary } from './bots/narration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -249,8 +250,10 @@ async function runBot(room, bot) {
   if (!fallback) return;
   room.botBusy = true;
   try {
+    let decision = null;
     const action = bot.botTakeover ? fallback : await getBotProfile(bot.difficulty).decide({
       state, config: AI_CONFIG, fallback,
+      onDecision: summary => { decision = summary; },
       onFallback: reason => {
         if (room.game === game && bot.lastFallbackReason !== reason) addLog(game, null, `${bot.name}：${reason}，已由规则机器人接手`);
         bot.lastFallbackReason = reason;
@@ -264,6 +267,13 @@ async function runBot(room, bot) {
     if (err) {
       const freshFallback = ruleBotAction(serialize(game, playerId));
       if (freshFallback) playerAct(game, playerId, freshFallback);
+    } else if (decision) {
+      if (bot.thoughtTurn !== game.turn) { bot.thoughtTurn = game.turn; bot.thoughtCount = 0; }
+      const thought = formatBotCommentary(decision);
+      if (thought && bot.thoughtCount < 2) {
+        addLog(game, game.players.find(p => p.id === playerId), thought, 'bot-thought');
+        bot.thoughtCount++;
+      }
     }
   } finally {
     room.botBusy = false;

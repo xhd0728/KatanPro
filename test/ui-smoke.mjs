@@ -191,10 +191,12 @@ try{
     assert.equal(playerAct(crowded,id,ruleBotAction(serialize(crowded,id))),null);
   }
   crowded.log=Array.from({length:50},(_,i)=>({name:'系统',text:'布局检查日志 '+i}));
+  crowded.log.push({name:'最高 AI',color:crowded.players[1].color,kind:'bot-thought',text:'看过建造位置后，觉得继续修路先等等：现在更需要直接争取分数，于是选择升级城市。'});
   await viewport(1280,720);
   await run(`S=${JSON.stringify(serialize(crowded,crowded.players[0].id))};render();$('#diceStats').hidden=false;renderStats();$('#side').scrollTop=$('#side').scrollHeight;$('#log').scrollTop=$('#log').scrollHeight`);
   assert.equal(await run("(()=>{const s=$('#side').getBoundingClientRect();return ['#handTray','#actionbar'].every(id=>$(id).getBoundingClientRect().right<=s.left+1)&&s.bottom<=innerHeight})()"),true,'desktop controls never overlap sidebar');
   assert.equal(await run("(()=>{const e=$('#log').lastElementChild,r=e.getBoundingClientRect();return r.bottom<=innerHeight&&document.elementFromPoint(r.x+10,r.y+r.height/2)?.closest('#log')!==null})()"),true,'last log remains visible with eight players and statistics');
+  assert.equal(await run("document.querySelectorAll('#log .bot-thought').length"),1,'agent summary uses its own visible log style');
   await screenshot('sidebar-eight-players');
   const dockSize=await run("({h:$('#handTray').offsetHeight,a:$('#actionbar').offsetHeight})");
   const dockCard=await run("(()=>{const r=$('.hand-card').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");

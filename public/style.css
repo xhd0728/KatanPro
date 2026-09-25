@@ -1155,6 +1155,27 @@ input[type=checkbox] {
   font-weight:500;
 }
 
+.logline.bot-thought {
+  margin:7px 0;
+  padding:8px 9px;
+  border:1px solid #dce8da;
+  border-left:3px solid #73997b;
+  border-radius:7px;
+  background:#f4f8f0;
+  color:#485e4c;
+  line-height:1.55;
+}
+
+.bot-thought b { font-weight:700; }
+
+.thought-tag {
+  display:inline-block;
+  margin-right:6px;
+  color:#5a7860;
+  font-size:9px;
+  font-weight:700;
+}
+
 .hand-tray {
   height:115px;
   flex:none;

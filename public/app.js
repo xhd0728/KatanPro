@@ -230,7 +230,7 @@ let botProfiles = [
   {id:'medium',description:'轻量大模型辅助，优先遵循规则建议，失败时自动回退。'},
   {id:'high',description:'标准大模型决策，使用当前局面的关键候选与资源信息。'},
   {id:'very-high',description:'大模型决策并提供更完整的地图、路线和对手信息。'},
-  {id:'highest',description:'可见局面下进行最多三轮提议、合法性检查与复核；耗时和调用成本最高。'},
+  {id:'highest',description:'最多两次只读工具查询、五次模型调用；会复核动作并给出公开策略摘要。'},
 ];
 const botCatalogReady = fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
   const selected = currentRoom?.settings.botDifficulty || botDifficulty.value || catalog.defaultDifficulty;
@@ -346,7 +346,7 @@ function renderSidebar() {
   $('#bankBar').innerHTML = `<strong>银行储备 <span> / 每种共 ${BANK_SIZE} 张</span></strong>${RES.map(r => `<span title="${CN[r]}剩余 ${S.bank?.[r] ?? BANK_SIZE} 张">${resourceIcon(r)}${S.bank?.[r] ?? BANK_SIZE}</span>`).join('')}`;
   $('#deckLeft').textContent = `发展卡余 ${S.deckLeft}`;
   const log = $('#log'), nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 45;
-  log.innerHTML = S.log.map(l => `<div class="logline"><b style="color:${l.color || '#7e8f69'}">${esc(l.name)}</b> ${esc(l.text)}</div>`).join('');
+  log.innerHTML = S.log.map(l => `<div class="logline ${l.kind === 'bot-thought' ? 'bot-thought' : ''}">${l.kind === 'bot-thought' ? '<span class="thought-tag">AI 盘算</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}</b> ${esc(l.text)}</div>`).join('');
   if (nearBottom) log.scrollTop = log.scrollHeight;
   renderStats();
 }

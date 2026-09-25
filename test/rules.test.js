@@ -272,7 +272,7 @@ test('最高档有限循环修正非法动作并保留最后一个合法候选',
   const originalFetch = globalThis.fetch;
   const calls = [];
   const replies = [
-    { type: 'placeSettlement', vertex: 'invalid' }, fallback, other,
+    { type: 'placeSettlement', vertex: 'invalid' }, fallback, other, other,
   ];
   globalThis.fetch = async (_url, options) => {
     calls.push(JSON.parse(options.body));
@@ -282,19 +282,19 @@ test('最高档有限循环修正非法动作并保留最后一个合法候选',
     const reasons = [];
     const config = { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' };
     assert.deepEqual(await getBotProfile('highest').decide({ state, config, fallback, onFallback: reason => reasons.push(reason) }), other);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
     assert.match(calls[1].messages.at(-1).content, /不符合当前阶段/);
     assert.match(calls[2].messages.at(-1).content, /复核/);
     assert.deepEqual(reasons, []);
     calls.length = 0;
-    replies.push(fallback, { type: 'placeSettlement', vertex: 'invalid' }, { type: 'placeSettlement', vertex: 'invalid' });
+    replies.push(fallback, ...Array.from({ length: 4 }, () => ({ type: 'placeSettlement', vertex: 'invalid' })));
     assert.deepEqual(await getBotProfile('highest').decide({ state, config, fallback, onFallback: reason => reasons.push(reason) }), fallback);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 5);
     assert.deepEqual(reasons, [], '已有合法候选时不记录规则 Bot 接管');
     calls.length = 0;
-    replies.push(...Array.from({ length: 3 }, () => ({ type: 'placeSettlement', vertex: 'invalid' })));
+    replies.push(...Array.from({ length: 5 }, () => ({ type: 'placeSettlement', vertex: 'invalid' })));
     assert.deepEqual(await getBotProfile('highest').decide({ state, config, fallback, onFallback: reason => reasons.push(reason) }), fallback);
-    assert.equal(calls.length, 3, '反复非法输出也不会无限调用模型');
+    assert.equal(calls.length, 5, '反复非法输出也不会无限调用模型');
     assert.match(reasons.at(-1), /无效/);
   } finally {
     globalThis.fetch = originalFetch;

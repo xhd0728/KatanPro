@@ -3,7 +3,8 @@ import { aiBotAction } from '../bot.js';
 export const DEFAULT_BOT_DIFFICULTY = 'medium';
 
 // Add profiles here. decide receives only the current player's serialized view,
-// server-side credentials, a legal fallback, and a callback for fallback notices.
+// server-side credentials, a legal fallback, and callbacks for fallback notices
+// and validated agent decisions.
 // It returns an action or a Promise of an action. Credentials never enter the catalog.
 export const BOT_PROFILES = Object.freeze({
   low: {
@@ -31,9 +32,9 @@ export const BOT_PROFILES = Object.freeze({
   },
   highest: {
     label: '最高',
-    description: '可见局面下进行最多三轮提议、合法性检查与复核；耗时和调用成本最高。',
+    description: '最多两次只读工具查询、五次模型调用；会复核动作并给出公开策略摘要。',
     ai: { temperature: 0.15, stateDetail: 'rich', agentLoop: true },
-    decide: ({ state, config, fallback, onFallback }) => aiBotAction(state, config, fallback, onFallback, BOT_PROFILES.highest.ai),
+    decide: ({ state, config, fallback, onFallback, onDecision }) => aiBotAction(state, config, fallback, onFallback, BOT_PROFILES.highest.ai, onDecision),
   },
 });
 
