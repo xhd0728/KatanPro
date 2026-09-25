@@ -56,6 +56,8 @@ const server = http.createServer((req, res) => {
   let p;
   try { p = decodeURIComponent(req.url.split('?')[0]); }
   catch { res.writeHead(400); return res.end('bad request'); }
+  // fs throws synchronously on NUL, which would leave the request unanswered.
+  if (p.includes('\0')) { res.writeHead(400); return res.end('bad request'); }
   if (p === '/api/bot-profiles') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify({ defaultDifficulty: DEFAULT_BOT_DIFFICULTY, profiles: listBotProfiles() }));

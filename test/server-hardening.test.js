@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import WebSocket from 'ws';
@@ -79,6 +80,26 @@ test('未被认领的房间会被清理，房间总数有上限', { timeout: 100
     assert.ok((await again.next('created')).code, 'capacity freed after cleanup');
   } finally {
     clients.forEach(c => c.close());
+    srv.stop();
+  }
+});
+
+test('静态资源请求：非法路径立即返回错误且不越出 public/', { timeout: 10000 }, async () => {
+  const srv = await startServer();
+  try {
+    // Raw requests: fetch would normalise dot segments before they reach the server.
+    const status = path => new Promise((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port: srv.port, path, timeout: 2000 }, r => { r.resume(); resolve(r.statusCode); });
+      req.on('timeout', () => req.destroy(new Error(`timeout: ${path}`))).on('error', reject);
+    });
+    assert.equal(await status('/a%00b'), 400);
+    assert.equal(await status('/index.html%00.js'), 400);
+    assert.equal(await status('/%E0%A4%A'), 400);
+    assert.equal(await status('/..%2fserver.js'), 403);
+    assert.equal(await status('/%2e%2e/.env'), 403);
+    assert.equal(await status('/index.html'), 200);
+    assert.equal(srv.stderr().includes('UNCAUGHT'), false);
+  } finally {
     srv.stop();
   }
 });
