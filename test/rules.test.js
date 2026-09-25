@@ -214,6 +214,32 @@ test('五档 AI 难度使用不同的模型调用策略', async () => {
   }
 });
 
+test('AI 上游返回超大响应时安全回退，不解析完整内容', async () => {
+  const g = game(2);
+  const state = serialize(g, g.players[0].id);
+  const fallback = { type: 'placeSettlement', vertex: state.legal.setup[0] };
+  const originalFetch = globalThis.fetch;
+  const oversized = new Uint8Array(128 * 1024 + 1);
+  globalThis.fetch = async () => ({
+    ok: true,
+    headers: new Headers(),
+    body: { getReader() {
+      let sent = false;
+      return { read: async () => sent ? { done: true } : (sent = true, { done: false, value: oversized }), releaseLock() {} };
+    } },
+  });
+  try {
+    const reasons = [];
+    assert.deepEqual(await getBotProfile('high').decide({
+      state, config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' }, fallback,
+      onFallback: reason => reasons.push(reason),
+    }), fallback);
+    assert.deepEqual(reasons, ['模型请求失败']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('玩家交易支持多种资源和指定接收者', () => {
   const g = game(3); setup(g); g.rolled = true;
   const [a, b, c] = g.players;

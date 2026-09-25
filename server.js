@@ -54,33 +54,39 @@ const embeddedAssets = (() => {
   } catch { return {}; }
 })();
 
+const securityHeaders = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+};
+
 const server = http.createServer((req, res) => {
   let p;
   try { p = decodeURIComponent(req.url.split('?')[0]); }
-  catch { res.writeHead(400); return res.end('bad request'); }
+  catch { res.writeHead(400, securityHeaders); return res.end('bad request'); }
   // fs throws synchronously on NUL, which would leave the request unanswered.
-  if (p.includes('\0')) { res.writeHead(400); return res.end('bad request'); }
+  if (p.includes('\0')) { res.writeHead(400, securityHeaders); return res.end('bad request'); }
   if (p === '/api/bot-profiles') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.writeHead(200, { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify({ defaultDifficulty: DEFAULT_BOT_DIFFICULTY, profiles: listBotProfiles() }));
   }
   if (p === '/api/rooms') {
     const list = [...rooms.values()].filter(r => !r.game).map(r => ({ code: r.code, mode: r.mode, locked: !!r.password, players: r.players.length, maxPlayers: 8, settings: r.settings }));
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.writeHead(200, { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify(list));
   }
   if (p === '/') p = '/index.html';
   const file = path.resolve(publicDir, '.' + p);
-  if (file !== publicDir && !file.startsWith(publicDir + path.sep)) { res.writeHead(403); return res.end(); }
+  if (file !== publicDir && !file.startsWith(publicDir + path.sep)) { res.writeHead(403, securityHeaders); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) {
       const key = 'public/' + path.relative(publicDir, file).split(path.sep).join('/');
       const asset = embeddedAssets[key];
-      if (asset == null) { res.writeHead(404); return res.end('not found'); }
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+      if (asset == null) { res.writeHead(404, securityHeaders); return res.end('not found'); }
+      res.writeHead(200, { ...securityHeaders, 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
       return res.end(asset);
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
+    res.writeHead(200, { ...securityHeaders, 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
     res.end(data);
   });
 });

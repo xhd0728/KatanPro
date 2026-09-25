@@ -99,16 +99,20 @@ test('静态资源请求：非法路径立即返回错误且不越出 public/', 
   const srv = await startServer();
   try {
     // Raw requests: fetch would normalise dot segments before they reach the server.
-    const status = path => new Promise((resolve, reject) => {
-      const req = http.get({ host: '127.0.0.1', port: srv.port, path, timeout: 2000 }, r => { r.resume(); resolve(r.statusCode); });
+    const request = path => new Promise((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port: srv.port, path, timeout: 2000 }, r => { r.resume(); resolve(r); });
       req.on('timeout', () => req.destroy(new Error(`timeout: ${path}`))).on('error', reject);
     });
-    assert.equal(await status('/a%00b'), 400);
-    assert.equal(await status('/index.html%00.js'), 400);
-    assert.equal(await status('/%E0%A4%A'), 400);
-    assert.equal(await status('/..%2fserver.js'), 403);
-    assert.equal(await status('/%2e%2e/.env'), 403);
-    assert.equal(await status('/index.html'), 200);
+    assert.equal((await request('/a%00b')).statusCode, 400);
+    assert.equal((await request('/index.html%00.js')).statusCode, 400);
+    assert.equal((await request('/%E0%A4%A')).statusCode, 400);
+    assert.equal((await request('/..%2fserver.js')).statusCode, 403);
+    assert.equal((await request('/%2e%2e/.env')).statusCode, 403);
+    const index = await request('/index.html');
+    assert.equal(index.statusCode, 200);
+    assert.equal(index.headers['x-content-type-options'], 'nosniff');
+    assert.equal(index.headers['x-frame-options'], 'DENY');
+    assert.equal(index.headers['referrer-policy'], 'no-referrer');
     assert.equal(srv.stderr().includes('UNCAUGHT'), false);
   } finally {
     srv.stop();

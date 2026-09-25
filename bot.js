@@ -273,9 +273,29 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       const length = Number(responseValue.headers?.get?.('content-length'));
       if (Number.isFinite(length) && length > MAX_AI_RESPONSE_BYTES) throw new Error('模型响应过大');
       if (typeof responseValue.text !== 'function') return responseValue.json();
-      const text = await responseValue.text();
-      if (new TextEncoder().encode(text).byteLength > MAX_AI_RESPONSE_BYTES) throw new Error('模型响应过大');
-      return JSON.parse(text);
+      if (!responseValue.body?.getReader) {
+        const text = await responseValue.text();
+        if (new TextEncoder().encode(text).byteLength > MAX_AI_RESPONSE_BYTES) throw new Error('模型响应过大');
+        return JSON.parse(text);
+      }
+      const reader = responseValue.body.getReader();
+      const chunks = [];
+      let totalBytes = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalBytes += value.byteLength;
+          if (totalBytes > MAX_AI_RESPONSE_BYTES) throw new Error('模型响应过大');
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      const bytes = new Uint8Array(totalBytes);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return JSON.parse(new TextDecoder().decode(bytes));
     };
     const data = await readJson(response);
     const content = data?.choices?.[0]?.message?.content;
