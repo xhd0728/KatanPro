@@ -3,6 +3,7 @@ import { AGENT_TOOLS, runAgentTool } from './bots/agent-tools.js';
 import { normalizeBotCommentary } from './bots/narration.js';
 import { botMemoryContext, normalizeBotPlan } from './bots/memory.js';
 import { rankRoadChoices } from './bots/road-planner.js';
+import { aiApiMode, aiApiEndpoint, aiApiRequest, aiApiContent } from './bots/llm-api.js';
 
 const pick = (items) => items[Math.floor(Math.random() * items.length)];
 export const canAffordBundle = (res, bundle) => !!res && !!bundle && RES.every(r => res[r] >= (bundle[r] || 0));
@@ -332,6 +333,8 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
   if (state.phase === 'play' && !state.rolled && fallback?.type === 'roll') return fallback;
   const model = config?.models?.[strategy.id] || config?.model;
   if (!config?.baseUrl || !model || !config?.apiKey) { onFallback('模型配置不完整'); return fallback; }
+  const apiMode = aiApiMode(config.apiMode);
+  if (!apiMode) { onFallback('模型 API 模式无效'); return fallback; }
   const maxCalls = Math.max(0, Math.min(strategy.maxCalls ?? (strategy.agentLoop ? 5 : 1), runtime.remainingCalls ?? Infinity));
   if (!maxCalls) return fallback;
   const controller = new AbortController();
@@ -345,7 +348,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     return best.action;
   };
   try {
-    const endpoint = String(config.baseUrl).replace(/\/+$/, '') + '/chat/completions';
+    const endpoint = aiApiEndpoint(config.baseUrl, apiMode);
     let task;
     if (state.players[state.viewer]?.needDiscard) task = '弃掉自己资源的一半（向下取整）。只返回 JSON，例如 {"type":"discard","res":{"wood":1,"brick":0,"sheep":0,"wheat":0,"ore":0}}。';
     else if (state.phase === 'setup') task = state.legal?.kind === 'settlement'
@@ -367,22 +370,11 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       : state.phase === 'setup' ? '规则速记：初始定居点需与所有已有建筑相隔至少一条边，优先多种高产资源；第二个初始定居点会获得周边资源。'
       : '规则速记：只选当前阶段合法动作；定居点耗木砖羊麦各1，城市耗麦2矿3；对手手牌种类未知。';
     const prompt = `${task}${agentInstructions}\n${rules}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}\n历史与计划：${JSON.stringify(botMemoryContext(state, runtime.memory, strategy.historyLimit))}`;
-    const formatKey = `${endpoint}\n${model}`;
-    const request = async (messages, temperature, jsonMode = true) => fetch(endpoint, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-      body: JSON.stringify({
-        model,
+    const formatKey = `${apiMode}\n${endpoint}\n${model}`;
+    const request = async (messages, temperature, jsonMode = true) => fetch(endpoint,
+      aiApiRequest(apiMode, { model, messages, apiKey: config.apiKey,
         temperature: temperature ?? strategy.temperature ?? 0.7,
-        top_p: 0.8,
-        max_tokens: strategy.agentLoop ? 640 : 512,
-        enable_thinking: false,
-        chat_template_kwargs: { enable_thinking: false },
-        ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
-        messages,
-      })
-    });
+        agentLoop: !!strategy.agentLoop, jsonMode, signal: controller.signal }));
     const readJson = async responseValue => {
       const length = Number(responseValue.headers?.get?.('content-length'));
       if (Number.isFinite(length) && length > MAX_AI_RESPONSE_BYTES) throw new Error('模型响应过大');
@@ -420,7 +412,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       runtime.onProgress?.({ phase: attempt ? 'continue' : 'thinking', attempt: attempt + 1 });
       usedCalls++;
       const temperature = attempt ? Math.min(0.2, strategy.temperature ?? 0.2) : strategy.temperature;
-      let jsonMode = jsonModeSupport.get(formatKey) !== false;
+      let jsonMode = apiMode !== 'anthropic' && jsonModeSupport.get(formatKey) !== false;
       let response = await request(messages, temperature, jsonMode);
       // OpenAI-compatible gateways differ in JSON-mode support. Negotiate once
       // per endpoint/model, then remember the result for subsequent decisions.
@@ -441,7 +433,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       }
       const data = await readJson(response);
       if (jsonMode) jsonModeSupport.set(formatKey, true);
-      const content = data?.choices?.[0]?.message?.content;
+      const content = aiApiContent(apiMode, data);
       const step = normalizeAgentStep(content, state);
       if (step?.tool) {
         const key = JSON.stringify([step.tool, step.args]);

@@ -7,6 +7,7 @@ if (existsSync(envFile)) loadEnvFile(envFile);
 const requestedTimeout = Number(process.env.CATAN_AI_TIMEOUT_MS || 9000);
 export const DEFAULT_AI_CONFIG = {
   baseUrl: process.env.CATAN_AI_BASE_URL || '',
+  apiMode: process.env.CATAN_AI_API_MODE || 'chat',
   model: process.env.CATAN_AI_MODEL || '',
   models: {
     medium: process.env.CATAN_AI_MODEL_MEDIUM || '',

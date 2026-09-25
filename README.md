@@ -103,7 +103,8 @@ npm run build
 |---|---|---|
 | `HOST` | 监听地址 | `0.0.0.0` |
 | `PORT` | 监听端口 | `8787` |
-| `CATAN_AI_BASE_URL` | OpenAI 兼容接口地址 | 空（禁用大模型 Bot） |
+| `CATAN_AI_API_MODE` | `chat`（Chat Completions）、`responses`（OpenAI Responses）或 `anthropic`（Anthropic Messages） | `chat` |
+| `CATAN_AI_BASE_URL` | 接口根地址，通常以 `/v1` 结尾；按模式分别请求 `/chat/completions`、`/responses` 或 `/messages` | 空（禁用大模型 Bot） |
 | `CATAN_AI_MODEL` | 模型名称 | 空 |
 | `CATAN_AI_MODEL_MEDIUM`、`CATAN_AI_MODEL_HIGH`、`CATAN_AI_MODEL_VERY_HIGH`、`CATAN_AI_MODEL_HIGHEST` | 可选的各档模型名称；未设置时沿用 `CATAN_AI_MODEL` | 空 |
 | `CATAN_AI_KEY` | 接口密钥 | 空 |
@@ -111,6 +112,8 @@ npm run build
 | `CATAN_DISCONNECT_TAKEOVER_MS` | 断线后交给规则 Bot 临时接管的等待时间（毫秒） | `15000` |
 | `CATAN_UNCLAIMED_ROOM_MS` | 新建后无人加入的房间保留时间（毫秒） | `60000` |
 | `CATAN_MAX_ROOMS` | 服务器同时存在的房间数上限 | `500` |
+
+例如 OpenAI Responses 使用 `CATAN_AI_API_MODE=responses`、`CATAN_AI_BASE_URL=https://api.openai.com/v1`；Anthropic Messages 使用 `CATAN_AI_API_MODE=anthropic`、`CATAN_AI_BASE_URL=https://api.anthropic.com/v1`。两者仍使用 `CATAN_AI_MODEL`、`CATAN_AI_KEY` 和各档模型覆盖变量。API 模式对本服务的所有模型档位统一生效；低档不请求模型。Responses 优先请求 JSON 输出，若接口明确不支持则退回文本 JSON；Anthropic Messages 要求模型输出 JSON 文本，服务端仍检查动作与工具调用是否合法。参考 [OpenAI Responses 文档](https://developers.openai.com/api/docs/guides/structured-outputs)及 [Anthropic Messages 文档](https://platform.claude.com/docs/en/api/messages/create)。
 
 ## 玩法
 

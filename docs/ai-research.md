@@ -26,7 +26,9 @@
 
 ## 输出协议、响应速度与过程展示
 
-兼容 Chat Completions 接口的请求优先使用 `response_format: {"type":"json_object"}`，以减少 Markdown、前后废话和破损 JSON。如果端点返回不兼容状态，服务端对该端点和模型记住降级结果，随后请求继续使用普通文本模式；首次协商可能额外发出一次请求，并计入回合调用预算。最终动作始终要通过本地合法性校验。JSON 模式只保证语法，不能保证动作符合游戏规则；此处没有假定所有兼容供应商都支持更严格的 JSON Schema。[OpenAI Structured Outputs 文档](https://developers.openai.com/api/docs/guides/structured-outputs)
+模型接口由 `CATAN_AI_API_MODE` 选择，默认 `chat` 保持原来的 Chat Completions 请求；`responses` 发送 OpenAI Responses 的 `input` 并从 `output` 消息提取文本；`anthropic` 使用 Anthropic Messages 的请求头、`messages` 和文本块。三者共用局面压缩、受限只读工具循环、合法性检查、调用预算与回退。Responses 请求设 `store:false`，跨动作记忆仍由本游戏在本地管理。[OpenAI Responses 文档](https://developers.openai.com/api/docs/guides/text)、[Anthropic Messages 文档](https://platform.claude.com/docs/en/api/messages/create)
+
+Chat Completions 优先使用 `response_format: {"type":"json_object"}`，Responses 优先使用 `text.format: {"type":"json_object"}`，以减少 Markdown、前后废话和破损 JSON。如果端点拒绝对应 JSON 参数，服务端对该模式、端点和模型记住降级结果，随后请求继续使用普通文本模式；首次协商可能额外发出一次请求，并计入回合调用预算。Anthropic Messages 当前使用提示词要求 JSON 文本，暂不启用需要按模型适配的原生 JSON Schema；服务端仍会解析、修正或回退。JSON 模式只保证语法，不能保证动作符合游戏规则。[OpenAI Structured Outputs 文档](https://developers.openai.com/api/docs/guides/structured-outputs)、[Anthropic Structured Outputs 文档](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
 
 单个动作在等待模型时，通过独立 WebSocket 状态显示“分析局面”“已查建造位置／资源缺口／强盗落点等”“修正非法建议”“复核关键动作”。这些短暂进度不会写入公开历史，动作结束即清理。右侧「岛上动态」获得更大的最低高度；成功动作才生成持久决策摘要，并标出实际用过的只读工具。这个设计参考 Open WebUI 把工具执行状态作为独立事件发送到界面的做法，以及 LangGraph 将决策分成可观察步骤的组织方式。[Open WebUI event emitter](https://github.com/open-webui/docs/blob/main/docs/features/extensibility/plugin/development/events.mdx)、[LangGraph Thinking in LangGraph](https://docs.langchain.com/oss/javascript/langgraph/thinking-in-langgraph)
 
