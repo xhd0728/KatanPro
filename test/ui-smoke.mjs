@@ -59,6 +59,7 @@ try{
   }
   await run("$('#soloMode').checked=true;$('#soloMode').dispatchEvent(new Event('change'));$('#botCount').value='2';$('#botDifficulty').value='rule';$('#botDifficulty').dispatchEvent(new Event('change'));$('#startBtn').click()");
   await until("typeof S !== 'undefined' && S?.phase==='setup'");
+  assert.equal(await run("Number($('#playerCards').firstElementChild.dataset.playerIndex)"),await run('activePlayer()'),'setup actor is pinned first');
   const setupSnapshot=await run('JSON.stringify(S)');
   await viewport(390,844,true);
   let canvasClicks=0;
@@ -213,7 +214,21 @@ try{
   assert.equal(await run("[...document.querySelectorAll('.pcard')].every((card,i)=>[S.players[i].settlements,S.players[i].cities,S.players[i].roadLength,S.players[i].robberMoves].every((n,j)=>card.querySelectorAll('.pcard-metrics strong')[j].textContent===String(n)))"),true,'buildings, connected roads and robber moves are prominent');
   assert.equal(await run("parseFloat(getComputedStyle($('.pcard-metrics strong')).fontSize)>parseFloat(getComputedStyle($('.pcard-details')).fontSize)"),true,'resource hand count is secondary');
   await viewport(1440,960);await run("$('#diceStats').hidden=true;$('#side').scrollTop=0;render()");await screenshot('players-contrast-desktop');
-  await viewport(390,844,true);await screenshot('players-contrast-mobile');
+  const nextSeat=await run('(activePlayer()+3)%S.players.length');
+  await run(`$('#playerCards').scrollTop=$('#playerCards').scrollHeight;S.current=${nextSeat};render()`);
+  assert.deepEqual(await run("[...$('#playerCards').children].map(card=>Number(card.dataset.playerIndex))"),[nextSeat,...Array.from({length:8},(_,i)=>i).filter(i=>i!==nextSeat)],'turn actor moves first without changing seat identities');
+  assert.equal(await run("$('#playerCards').firstElementChild.getAttribute('aria-current')"),'true');
+  assert.equal(await run("[...$('#playerCards').children].some(card=>card.getAnimations().some(animation=>animation.effect.getKeyframes().some(frame=>String(frame.transform||'').startsWith('translateY('))))"),true,'turn change animates card travel');
+  await pause(180);await screenshot('players-turn-moving');await pause(720);
+  assert.ok(await run("$('#playerCards').scrollTop")<2,'new actor is brought into view');
+  await run('render()');
+  assert.equal(await run("[...$('#playerCards').children].some(card=>card.getAnimations().some(animation=>animation.effect.getKeyframes().some(frame=>String(frame.transform||'').startsWith('translateY('))))"),false,'same turn does not replay travel');
+  await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await run('S.current=(S.current+1)%S.players.length;render()');
+  assert.equal(await run("Number($('#playerCards').firstElementChild.dataset.playerIndex)"),await run('activePlayer()'),'reduced motion still reorders cards');
+  assert.equal(await run("[...$('#playerCards').children].some(card=>card.getAnimations().some(animation=>animation.effect.getKeyframes().some(frame=>String(frame.transform||'').startsWith('translateY('))))"),false,'reduced motion skips travel');
+  await call('Emulation.setEmulatedMedia',{features:[]});
+  await viewport(390,844,true);await run("$('#mobileInfoBtn').click()");await screenshot('players-contrast-mobile');await run("$('#mobileInfoBtn').click()");
   await call('Page.navigate',{url:origin+'/?ui-smoke=ai-only'});
   await until("location.search==='?ui-smoke=ai-only' && document.readyState==='complete' && typeof $==='function' && !!document.querySelector('[name=createMode]')");
   await run("document.querySelector('[name=createMode][value=\"ai-only\"]').checked=true;$('#createBtn').click()");
@@ -232,7 +247,7 @@ try{
   await viewport(844,390,true);await screenshot('ai-spectator-landscape');
   assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true,'spectator landscape has no overflow');
   assert.deepEqual(errors,[],'browser runtime errors');
-  console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],featureChecks:['trade-inventory','unavailable-reasons','sidebar-eight-players','dock-hover','ai-only-room','spectator-host-reload'],screenshots:output,browserErrors:errors},null,2));
+  console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],featureChecks:['trade-inventory','unavailable-reasons','sidebar-eight-players','turn-card-sort-motion','dock-hover','ai-only-room','spectator-host-reload'],screenshots:output,browserErrors:errors},null,2));
 } finally {
   socket?.terminate();chrome.kill();server.kill();
   await pause(200);try{fs.rmSync(profile,{recursive:true,force:true});}catch{}

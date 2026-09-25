@@ -352,16 +352,7 @@ function renderHeader() {
   $('#boardSubtitle').textContent = `${S.map.hexes.length} 块地形 · ${S.map.ports.length} 座港口`;
 }
 function renderSidebar() {
-  $('#playerCards').innerHTML = S.players.map((p, i) => `<div class="pcard ${i === activePlayer() ? 'cur' : ''}" style="--player-color:${p.color}">
-    <div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span><span class="vp"><b>${p.vp}</b>分</span></div>
-    <div class="pcard-metrics" aria-label="${esc(p.name)}的建筑与行动统计">
-      <div><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
-      <div><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>
-      <div title="最长连续道路"><span>${icon('road')}连路长度</span><strong>${p.roadLength ?? p.roads}</strong></div>
-      <div title="含掷出 7 与骑士牌触发的成功移动"><span>${icon('knight')}强盗移动</span><strong>${p.robberMoves ?? 0}</strong></div>
-    </div>
-    <div class="pcard-details"><span>已建道路 ${p.roads}</span><span>骑士出牌 ${p.knightsPlayed || 0}</span><span>手牌 ${p.total}</span><span>${p.needDiscard ? '待弃牌' : `发展卡 ${p.devCount}`}</span></div>
-    <div class="score-track"><span style="width:${Math.min(100,p.vp/S.settings.targetVP*100)}%"></span></div></div>`).join('');
+  renderPlayerCards();
   $('#badgeBar').innerHTML = `<div class="achievement">${icon('road')} 最长道路 · +2<b>${esc(S.longest.name || '等待 5 段连路')}${S.longest.len ? ' · ' + S.longest.len + ' 段' : ''}</b></div><div class="achievement">${icon('knight')} 最大骑士团 · +2<b>${esc(S.army.name || '等待 3 张骑士')}</b></div>`;
   $('#bankBar').innerHTML = `<strong>银行储备 <span> / 每种共 ${BANK_SIZE} 张</span></strong>${RES.map(r => `<span title="${CN[r]}剩余 ${S.bank?.[r] ?? BANK_SIZE} 张">${resourceIcon(r)}${S.bank?.[r] ?? BANK_SIZE}</span>`).join('')}`;
   $('#deckLeft').textContent = `发展卡余 ${S.deckLeft}`;
@@ -375,6 +366,60 @@ function renderSidebar() {
   }).join('');
   if (nearBottom) log.scrollTop = log.scrollHeight;
   renderStats();
+}
+function renderPlayerCards() {
+  const list = $('#playerCards');
+  const gameId = String(S.id);
+  const sameGame = list.dataset.gameId === gameId;
+  if (!sameGame) list.replaceChildren();
+  const current = S.phase === 'over' ? -1 : activePlayer();
+  const active = Number.isInteger(current) && current >= 0 && current < S.players.length ? current : -1;
+  const previousActive = Number(list.dataset.active);
+  const moved = sameGame && previousActive !== active;
+  const motion = moved && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // A new actor should be visible even when the viewer scrolled the roster.
+  // This runs before the browser paints, so the FLIP starts from the visible top.
+  if (moved) list.scrollTop = 0;
+  const oldTops = motion ? new Map([...list.children].map(card =>
+    [Number(card.dataset.playerIndex), card.getBoundingClientRect().top])) : null;
+  if (moved) for (const card of list.children) for (const animation of card.getAnimations()) animation.cancel();
+  const cards = new Map([...list.children].map(card => [Number(card.dataset.playerIndex), card]));
+  const seats = S.players.map((_, i) => i);
+  const order = active < 0 ? seats : [active, ...seats.filter(i => i !== active)];
+  order.forEach((i, position) => {
+    const p = S.players[i];
+    const card = cards.get(i) || document.createElement('div');
+    card.className = `pcard${i === active ? ' cur' : ''}`;
+    card.dataset.playerIndex = i;
+    card.setAttribute('aria-current', String(i === active));
+    card.style.setProperty('--player-color', p.color);
+    card.innerHTML = `<div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span>${i === active ? '<span class="turn-status"><i></i>行动中</span>' : ''}<span class="vp"><b>${p.vp}</b>分</span></div>
+      <div class="pcard-metrics" aria-label="${esc(p.name)}的建筑与行动统计">
+        <div><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
+        <div><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>
+        <div title="最长连续道路"><span>${icon('road')}连路长度</span><strong>${p.roadLength ?? p.roads}</strong></div>
+        <div title="含掷出 7 与骑士牌触发的成功移动"><span>${icon('knight')}强盗移动</span><strong>${p.robberMoves ?? 0}</strong></div>
+      </div>
+      <div class="pcard-details"><span>已建道路 ${p.roads}</span><span>骑士出牌 ${p.knightsPlayed || 0}</span><span>手牌 ${p.total}</span><span>${p.needDiscard ? '待弃牌' : `发展卡 ${p.devCount}`}</span></div>
+      <div class="score-track"><span style="width:${Math.min(100,p.vp/S.settings.targetVP*100)}%"></span></div>`;
+    if (list.children[position] !== card) list.insertBefore(card, list.children[position] || null);
+  });
+  list.dataset.gameId = gameId;
+  list.dataset.active = String(active);
+  if (motion) {
+    for (const card of list.children) {
+      const oldTop = oldTops.get(Number(card.dataset.playerIndex));
+      if (oldTop == null) continue;
+      const dy = oldTop - card.getBoundingClientRect().top;
+      if (Math.abs(dy) > 1) card.animate([
+        { transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }
+      ], { duration: 580, easing: 'cubic-bezier(.22,1,.36,1)' });
+    }
+    list.querySelector('.pcard.cur')?.animate([
+      { boxShadow: '0 0 0 5px color-mix(in srgb,var(--player-color),transparent 80%)' },
+      { boxShadow: '0 3px 14px color-mix(in srgb,var(--player-color),transparent 84%)' }
+    ], { duration: 850, easing: 'ease-out' });
+  }
 }
 function renderBotProgress() {
   const box = $('#botProgress');

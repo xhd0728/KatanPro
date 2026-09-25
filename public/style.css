@@ -885,11 +885,15 @@ input[type=checkbox] {
   border-radius:11px;
   padding:12px 11px;
   position:relative;
+  box-shadow:0 1px 3px #244c3810;
+  transition:background .3s ease,border-color .3s ease,box-shadow .3s ease;
 }
 
 .pcard.cur {
   background:color-mix(in srgb,var(--player-color),white 94%);
   border-color:var(--player-color);
+  box-shadow:0 3px 14px color-mix(in srgb,var(--player-color),transparent 84%);
+  z-index:1;
 }
 
 .pcard .top {
@@ -914,9 +918,30 @@ input[type=checkbox] {
 .pcard .nm {
   font-size:12px;
   font-weight:650;
+  min-width:0;
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
+}
+
+.turn-status {
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  flex:none;
+  padding:3px 5px;
+  border-radius:20px;
+  background:color-mix(in srgb,var(--player-color),white 88%);
+  color:color-mix(in srgb,var(--player-color),black 25%);
+  font-size:9px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.turn-status i {
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:var(--player-color);
 }
 
 .you-tag {
