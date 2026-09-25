@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, generateMap, legalSetup, legalBuild, playerAct, serialize, portRatesFor, RES, BANK_SIZE } from '../game/engine.js';
-import { normalizeAIAction, isUsefulAIAction, ruleBotAction, usefulBankTrade, usefulYearAction } from '../bot.js';
+import { normalizeAIAction, isUsefulAIAction, ruleBotAction, usefulBankTrade, usefulYearAction, compactStateForAI } from '../bot.js';
 import { getBotProfile, listBotProfiles } from '../bots/profiles.js';
 
 function game(n = 3) {
@@ -209,6 +209,74 @@ test('五档 AI 难度使用不同的模型调用策略', async () => {
     assert.equal(requests.length, 5);
     assert.deepEqual(requests.map(r => r.temperature), [0.85, 0.55, 0.3, 0.15, 0.15]);
     assert.ok(requests[2].messages[0].content.length > requests[0].messages[0].content.length);
+    setup(g);
+    assert.deepEqual(await getBotProfile('highest').decide({ state: serialize(g, g.players[0].id), config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' }, fallback: { type: 'roll' } }), { type: 'roll' });
+    assert.equal(requests.length, 5, '只有掷骰这一种选择时不消耗模型调用');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('模型动作在提交前检查资源、发展卡和弃牌数量', () => {
+  const g = game(2); setup(g);
+  const p = g.players[0];
+  let state = serialize(g, p.id);
+  assert.equal(isUsefulAIAction(state, { type: 'buyDev' }), false, '掷骰前不能买卡');
+  assert.equal(isUsefulAIAction(state, { type: 'playKnight' }), false, '没有骑士卡不能打出');
+  g.rolled = true;
+  state = serialize(g, p.id);
+  assert.equal(isUsefulAIAction(state, { type: 'roll' }), false, '已掷骰不能重掷');
+  assert.equal(isUsefulAIAction(state, { type: 'bankTrade', give: 'wood', want: 'ore' }), false, '银行交易需要付得起');
+  assert.equal(isUsefulAIAction(state, { type: 'playYear', r1: 'wood', r2: 'ore' }), false, '没有丰收卡不能打出');
+  assert.equal(isUsefulAIAction(state, { type: 'offerTrade', give: { wood: 99 }, want: { ore: 1 } }), false, '交易资源必须合法');
+  p.res = Object.fromEntries(RES.map(r => [r, r === 'wood' ? 8 : 0])); g.discardQueue = [0];
+  state = serialize(g, p.id);
+  assert.equal(isUsefulAIAction(state, { type: 'discard', res: { wood: 1 } }), false, '弃牌必须恰好一半');
+  assert.equal(isUsefulAIAction(state, { type: 'discard', res: { wood: Math.floor(p.res.wood / 2) } }), true);
+});
+
+test('强盗决策给模型公开的产出和目标信息，不泄露对手手牌种类', () => {
+  const g = game(2); setup(g);
+  g.needMoveRobber = true;
+  const state = serialize(g, g.players[0].id);
+  const choices = compactStateForAI(state, 'rich').choices.robber;
+  assert.ok(choices.some(h => h.opponents.length), '模型可辨别被阻断的对手建筑');
+  assert.equal(choices.some(h => h.opponents.some(p => 'res' in p)), false, '候选不含对手手牌种类');
+  assert.equal(state.players[1].res, null);
+});
+
+test('最高档有限循环修正非法动作并保留最后一个合法候选', async () => {
+  const g = game(2);
+  const state = serialize(g, g.players[0].id);
+  const fallback = { type: 'placeSettlement', vertex: state.legal.setup[0] };
+  const other = { type: 'placeSettlement', vertex: state.legal.setup[1] };
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const replies = [
+    { type: 'placeSettlement', vertex: 'invalid' }, fallback, other,
+  ];
+  globalThis.fetch = async (_url, options) => {
+    calls.push(JSON.parse(options.body));
+    return { ok: true, async json() { return { choices: [{ message: { content: JSON.stringify(replies.shift()) } }] }; } };
+  };
+  try {
+    const reasons = [];
+    const config = { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' };
+    assert.deepEqual(await getBotProfile('highest').decide({ state, config, fallback, onFallback: reason => reasons.push(reason) }), other);
+    assert.equal(calls.length, 3);
+    assert.match(calls[1].messages.at(-1).content, /不符合当前阶段/);
+    assert.match(calls[2].messages.at(-1).content, /复核/);
+    assert.deepEqual(reasons, []);
+    calls.length = 0;
+    replies.push(fallback, { type: 'placeSettlement', vertex: 'invalid' }, { type: 'placeSettlement', vertex: 'invalid' });
+    assert.deepEqual(await getBotProfile('highest').decide({ state, config, fallback, onFallback: reason => reasons.push(reason) }), fallback);
+    assert.equal(calls.length, 3);
+    assert.deepEqual(reasons, [], '已有合法候选时不记录规则 Bot 接管');
+    calls.length = 0;
+    replies.push(...Array.from({ length: 3 }, () => ({ type: 'placeSettlement', vertex: 'invalid' })));
+    assert.deepEqual(await getBotProfile('highest').decide({ state, config, fallback, onFallback: reason => reasons.push(reason) }), fallback);
+    assert.equal(calls.length, 3, '反复非法输出也不会无限调用模型');
+    assert.match(reasons.at(-1), /无效/);
   } finally {
     globalThis.fetch = originalFetch;
   }

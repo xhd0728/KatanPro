@@ -230,7 +230,7 @@ let botProfiles = [
   {id:'medium',description:'轻量大模型辅助，优先遵循规则建议，失败时自动回退。'},
   {id:'high',description:'标准大模型决策，使用当前局面的关键候选与资源信息。'},
   {id:'very-high',description:'大模型决策并提供更完整的地图、路线和对手信息。'},
-  {id:'highest',description:'完整信息决策后再进行一次模型复核，成本和响应时间最高。'},
+  {id:'highest',description:'可见局面下进行最多三轮提议、合法性检查与复核；耗时和调用成本最高。'},
 ];
 const botCatalogReady = fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
   const selected = currentRoom?.settings.botDifficulty || botDifficulty.value || catalog.defaultDifficulty;

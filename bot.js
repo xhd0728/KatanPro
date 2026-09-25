@@ -186,25 +186,46 @@ export function normalizeAIAction(value) {
 export function isUsefulAIAction(state, action) {
   if (!action) return false;
   const me = state.players[state.viewer];
-  if (me?.needDiscard) return action.type === 'discard';
+  if (!me) return false;
+  if (me.needDiscard) return action.type === 'discard' && action.res &&
+    Object.keys(action.res).every(r => RES.includes(r)) &&
+    RES.every(r => Number.isInteger(action.res[r] || 0) && (action.res[r] || 0) >= 0 && (action.res[r] || 0) <= me.res[r]) &&
+    bundleTotal(action.res) === Math.floor(me.total / 2);
   if (state.phase === 'setup') return state.legal?.setupPlayer === state.viewer &&
     (action.type === 'placeSettlement' && state.legal.kind === 'settlement' && state.legal.setup.includes(action.vertex) ||
      action.type === 'placeRoad' && state.legal.kind === 'road' && state.legal.setup.includes(action.edge));
   if (state.stealFrom?.length) return action.type === 'steal' && state.stealFrom.includes(action.from);
-  if (state.needMoveRobber) return action.type === 'moveRobber' && state.map.hexes.some(h => h.id === action.hex && h.id !== state.map.robber);
+  if (state.needMoveRobber) return action.type === 'moveRobber' && state.viewer === state.current && state.map.hexes.some(h => h.id === action.hex && h.id !== state.map.robber);
   if (state.offer && !state.eventPending && state.offer.targets?.includes(state.viewer) && ['acceptOffer', 'rejectOffer'].includes(action.type))
     return action.type === 'rejectOffer' || canAffordBundle(me.res, state.offer.want);
   if (state.viewer !== state.current || state.phase !== 'play') return false;
   if (state.eventPending) return false;
   if (state.offer?.from === state.viewer) return action.type === 'cancelOffer';
   if (state.roadBuildLeft) return action.type === 'buildRoad' && !!state.legal?.road?.includes(action.edge);
-  if (!state.rolled) return ['roll', 'playKnight', 'playYear', 'playMono', 'playRoad'].includes(action.type);
-  if (action.type === 'buildRoad') return state.legal?.road?.includes(action.edge);
-  if (action.type === 'buildSettlement') return state.legal?.settlement?.includes(action.vertex);
-  if (action.type === 'buildCity') return state.legal?.city?.includes(action.vertex);
+  const playableCard = type => !state.devPlayed && (state.cards?.[type] || 0) >
+    (state.cards?.fresh || []).filter(card => card === type).length;
+  if (action.type === 'roll') return !state.rolled;
+  if (action.type === 'playKnight') return playableCard('knight');
+  if (action.type === 'playRoad') return playableCard('road') && !!state.legal?.canPlayRoad;
+  if (action.type === 'playMono') return playableCard('mono') && RES.includes(action.res);
+  if (action.type === 'playYear') return playableCard('year') && RES.includes(action.r1) && RES.includes(action.r2) &&
+    (state.bank?.[action.r1] || 0) >= (action.r1 === action.r2 ? 2 : 1) && (state.bank?.[action.r2] || 0) >= 1;
+  if (!state.rolled) return false;
+  if (action.type === 'buildRoad') return !!state.legal?.road?.includes(action.edge);
+  if (action.type === 'buildSettlement') return !!state.legal?.settlement?.includes(action.vertex);
+  if (action.type === 'buildCity') return !!state.legal?.city?.includes(action.vertex);
   if (action.type === 'buyDev') return !!state.legal?.dev;
-  if (action.type === 'cancelOffer') return state.offer?.from === state.viewer;
-  return ['roll', 'playKnight', 'playYear', 'playMono', 'playRoad', 'bankTrade', 'offerTrade', 'endTurn'].includes(action.type);
+  if (action.type === 'bankTrade') return RES.includes(action.give) && RES.includes(action.want) && action.give !== action.want &&
+    me.res[action.give] >= (me.ports?.[action.give] || 4) && (state.bank?.[action.want] || 0) > 0;
+  if (action.type === 'offerTrade') {
+    const valid = bundle => bundle && typeof bundle === 'object' && Object.keys(bundle).every(r => RES.includes(r)) &&
+      RES.every(r => Number.isInteger(bundle[r] || 0) && (bundle[r] || 0) >= 0 && (bundle[r] || 0) <= BANK_SIZE) && bundleTotal(bundle) > 0;
+    const targets = action.targets ?? state.players.map((_, i) => i).filter(i => i !== state.viewer);
+    return !state.offer && valid(action.give) && valid(action.want) && canAffordBundle(me.res, action.give) &&
+      RES.some(r => (action.give[r] || 0) !== (action.want[r] || 0)) && Array.isArray(targets) && targets.length > 0 &&
+      targets.every(i => Number.isInteger(i) && i >= 0 && i < state.players.length && i !== state.viewer);
+  }
+  return action.type === 'endTurn';
 }
 
 export function compactStateForAI(state, detail = 'compact') {
@@ -240,8 +261,16 @@ export function compactStateForAI(state, detail = 'compact') {
   if (state.phase === 'setup') return { phase: 'setup', kind,
     choices: kind === 'settlement' ? { settlement: spots } : { road: roads } };
   if (state.needMoveRobber) return { robberNow: state.map.robber,
-    choices: { robber: state.map.hexes.filter(h => h.id !== state.map.robber)
-      .map(h => ({ id: h.id, resource: h.resource, number: h.number })) } };
+    choices: { robber: state.map.hexes.filter(h => h.id !== state.map.robber).map(h => {
+      const nearby = state.map.vertices.filter(v => v.hexes?.includes(h.id));
+      const impact = state.players.map((p, i) => ({
+        id: i, vp: p.vp, cards: p.total,
+        production: nearby.reduce((sum, v) => sum + (p.settleVerts?.includes(v.id) ? 1 : p.cityVerts?.includes(v.id) ? 2 : 0), 0),
+      })).filter(p => p.production);
+      return { id: h.id, resource: h.resource, number: h.number,
+        ownProduction: impact.find(p => p.id === state.viewer)?.production || 0,
+        opponents: impact.filter(p => p.id !== state.viewer) };
+    }) } };
   if (state.stealFrom?.length) return { stealFrom: state.stealFrom,
     opponents: state.players.map((p, id) => ({ id, vp: p.vp, cards: p.total })) };
   if (!state.rolled && !state.offer && !state.roadBuildLeft) return { rolled: false };
@@ -263,9 +292,11 @@ export function compactStateForAI(state, detail = 'compact') {
 }
 
 export async function aiBotAction(state, config, fallback, onFallback = () => {}, strategy = {}) {
+  if (state.phase === 'play' && !state.rolled && fallback?.type === 'roll') return fallback;
   if (!config?.baseUrl || !config?.model || !config?.apiKey) { onFallback('模型配置不完整'); return fallback; }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.max(1000, Math.min(20000, Number(config.timeout) || 9000)));
+  let best = null;
   try {
     const endpoint = String(config.baseUrl).replace(/\/+$/, '') + '/chat/completions';
     let task;
@@ -294,8 +325,6 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
         messages,
       })
     });
-    const response = await request([{ role: 'user', content: prompt }], strategy.temperature);
-    if (!response.ok) { onFallback(`模型服务返回 ${response.status}`); return fallback; }
     const readJson = async responseValue => {
       const length = Number(responseValue.headers?.get?.('content-length'));
       if (Number.isFinite(length) && length > MAX_AI_RESPONSE_BYTES) throw new Error('模型响应过大');
@@ -324,20 +353,38 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
       return JSON.parse(new TextDecoder().decode(bytes));
     };
-    const data = await readJson(response);
-    const content = data?.choices?.[0]?.message?.content;
-    let action = normalizeAIAction(content);
-    if (strategy.review && action && isUsefulAIAction(state, action)) {
-      const reviewPrompt = `复核候选动作是否适合当前卡坦岛局面。若合法且合理，原样返回；否则从状态中的合法选择中改正。只返回一个 JSON 动作。候选动作：${JSON.stringify(action)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'rich'))}`;
-      const reviewResponse = await request([{ role: 'user', content: reviewPrompt }], Math.min(0.2, strategy.temperature ?? 0.2));
-      if (!reviewResponse.ok) { onFallback(`模型复核服务返回 ${reviewResponse.status}`); return fallback; }
-      const reviewData = await readJson(reviewResponse);
-      action = normalizeAIAction(reviewData?.choices?.[0]?.message?.content);
+    // The server executes one action at a time and serializes a fresh state afterward.
+    // At the highest difficulty, this bounded inner loop can repair or reconsider one
+    // proposed action without mutating game state or reading opponents' hidden cards.
+    const messages = [{ role: 'user', content: prompt }];
+    const maxCalls = strategy.agentLoop ? 3 : 1;
+    for (let attempt = 0; attempt < maxCalls; attempt++) {
+      const response = await request(messages, attempt ? Math.min(0.2, strategy.temperature ?? 0.2) : strategy.temperature);
+      if (!response.ok) {
+        if (best) return best;
+        onFallback(`模型服务返回 ${response.status}`);
+        return fallback;
+      }
+      const data = await readJson(response);
+      const content = data?.choices?.[0]?.message?.content;
+      const action = normalizeAIAction(content);
+      const valid = isUsefulAIAction(state, action);
+      if (valid) {
+        const unchanged = best && JSON.stringify(best) === JSON.stringify(action);
+        best = action;
+        if (!strategy.agentLoop || action.type === 'roll' || unchanged || attempt === maxCalls - 1) return action;
+        messages.push({ role: 'assistant', content: JSON.stringify(action) });
+        messages.push({ role: 'user', content: '复核这个合法动作：比较胜利点、产出、下一步建造资源、扩张路线和领先对手。不得假设对手隐藏手牌的种类。若它已是较好选择，原样返回；否则返回一个更好的合法 JSON 动作。' });
+      } else if (attempt < maxCalls - 1) {
+        messages.push({ role: 'assistant', content: typeof content === 'string' ? content.slice(0, 512) : '{}' });
+        messages.push({ role: 'user', content: `上一个动作不符合当前阶段或资源约束。请根据已给状态修正，只返回一个合法 JSON 动作；可使用建议动作 ${JSON.stringify(best || fallback)}。` });
+      }
     }
-    if (isUsefulAIAction(state, action)) return action;
+    if (best) return best;
     onFallback('模型返回了当前阶段无效的操作');
     return fallback;
   } catch {
+    if (best) return best;
     onFallback(controller.signal.aborted ? '模型响应超时' : '模型请求失败');
     return fallback;
   } finally {
