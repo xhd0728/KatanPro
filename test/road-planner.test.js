@@ -48,6 +48,24 @@ test('开局路优先指向符合间隔规则的高产落点，模型也收到�
   assert.match(formatBotCommentary({ action: { type: 'placeRoad', edge: 'e1' }, state }), /小麦 8 附近.*还需 1 段路/);
 });
 
+test('开局候选路先全部排名，再截取发送模型的数量', () => {
+  const state = forkState();
+  state.players[1].settleVerts = [];
+  state.map.vertices = [{ id: 'A', hexes: [] }];
+  state.map.edges = [];
+  state.legal.setup = [];
+  for (let i = 0; i < 14; i++) {
+    state.map.vertices.push({ id: `B${i}`, hexes: [] },
+      { id: `C${i}`, hexes: i === 13 ? ['h0'] : [] });
+    state.map.edges.push({ id: `r${i}`, a: 'A', b: `B${i}`, owner: null },
+      { id: `c${i}`, a: `B${i}`, b: `C${i}`, owner: null });
+    state.legal.setup.push(`r${i}`);
+  }
+  assert.equal(ruleBotAction(state).edge, 'r13');
+  assert.equal(compactStateForAI(state).choices.road[0].id, 'r13');
+  assert.equal(compactStateForAI(state).choices.road.length, 10);
+});
+
 test('付费修路避开死路；已有可建落点时优先攒定居点资源', () => {
   const state = forkState('play');
   assert.deepEqual(ruleBotAction(state), { type: 'buildRoad', edge: 'e1' });

@@ -255,11 +255,9 @@ export function compactStateForAI(state, detail = 'compact') {
       score: tiles.reduce((n, h) => n + (h.number ? weight(h.number) : 0), 0) };
   };
   const limit = detail === 'rich' ? 8 : 3;
-  const setupLimit = detail === 'rich' ? 24 : 12;
   const roadLimit = detail === 'rich' ? 24 : 10;
   const spots = settlementIds.map(describeVertex).sort((a, b) => b.score - a.score).slice(0, limit);
-  const setup = kind === 'settlement' ? spots.map(v => v.id) : (state.legal?.setup || []).slice(0, setupLimit);
-  const roadIds = kind === 'road' ? setup : state.legal?.road || [];
+  const roadIds = kind === 'road' ? state.legal?.setup || [] : state.legal?.road || [];
   const me = state.players[state.viewer];
   const roads = () => rankRoadChoices(state, roadIds).slice(0, roadLimit)
     .map(choice => ({ id: choice.id, a: edges[choice.id]?.a, b: edges[choice.id]?.b,
