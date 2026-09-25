@@ -67,6 +67,25 @@ export function usefulBankTrade(state, me) {
   return candidates[0]?.action || null;
 }
 
+export function usefulYearAction(state, me) {
+  if (!state.rolled || !state.bank || !me?.res) return null;
+  const candidates = [];
+  for (const first of RES) for (const second of RES) {
+    if (state.bank[first] < 1 || state.bank[second] < (first === second ? 2 : 1)) continue;
+    const after = { ...me.res, [first]: (me.res[first] || 0) + 1, [second]: (me.res[second] || 0) + 1 };
+    for (const { priority, cost } of COSTS) {
+      const beforeMissing = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - (me.res[resource] || 0)), 0);
+      const afterMissing = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - after[resource]), 0);
+      if (afterMissing >= beforeMissing) continue;
+      const completes = afterMissing === 0 ? 1000 : 0;
+      const ordered = RES.indexOf(first) <= RES.indexOf(second) ? [first, second] : [second, first];
+      candidates.push({ action: { type: 'playYear', r1: ordered[0], r2: ordered[1] }, score: priority * 100 + completes - afterMissing });
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score || `${a.action.r1}:${a.action.r2}`.localeCompare(`${b.action.r1}:${b.action.r2}`));
+  return candidates[0]?.action || null;
+}
+
 function discardAction(state, me) {
   const need = Math.floor(me.total / 2);
   const left = { ...(me.res || {}) };
@@ -133,8 +152,8 @@ export function ruleBotAction(state) {
   if (legal.city?.length) return { type: 'buildCity', vertex: bestVertex(state, legal.city) };
   if (legal.settlement?.length) return { type: 'buildSettlement', vertex: bestVertex(state, legal.settlement) };
   if (!state.devPlayed && cards.year > (cards.fresh || []).filter(t => t === 'year').length) {
-    const want = RES.slice().sort((a, b) => (me.res[a] || 0) - (me.res[b] || 0)).filter(r => state.bank?.[r] > 0);
-    if (want.length && (state.bank[want[0]] > 1 || want.length > 1)) return { type: 'playYear', r1: want[0], r2: state.bank[want[0]] > 1 ? want[0] : want[1] };
+    const year = usefulYearAction(state, me);
+    if (year) return year;
   }
   if (!state.devPlayed && cards.mono > (cards.fresh || []).filter(t => t === 'mono').length) {
     const res = RES.slice().sort((a, b) => (state.bank?.[a] ?? BANK_SIZE) - (state.bank?.[b] ?? BANK_SIZE))[0];

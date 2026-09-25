@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, generateMap, legalSetup, legalBuild, playerAct, serialize, portRatesFor, RES, BANK_SIZE } from '../game/engine.js';
-import { normalizeAIAction, isUsefulAIAction, ruleBotAction, usefulBankTrade } from '../bot.js';
+import { normalizeAIAction, isUsefulAIAction, ruleBotAction, usefulBankTrade, usefulYearAction } from '../bot.js';
 import { getBotProfile, listBotProfiles } from '../bots/profiles.js';
 
 function game(n = 3) {
@@ -359,6 +359,18 @@ test('规则 Bot 银行交易在目标资源耗尽时保持谨慎', () => {
     ports: Object.fromEntries(RES.map(r => [r, 4])),
   };
   assert.equal(usefulBankTrade(state, me), null);
+});
+
+test('规则 Bot 丰收之年优先补齐城市所需资源', () => {
+  const state = { rolled: true, bank: Object.fromEntries(RES.map(r => [r, 10])) };
+  const me = { res: { wood: 0, brick: 0, sheep: 0, wheat: 1, ore: 2 } };
+  assert.deepEqual(usefulYearAction(state, me), { type: 'playYear', r1: 'wheat', r2: 'ore' });
+});
+
+test('规则 Bot 丰收之年在银行无法提供两张资源时不误触发', () => {
+  const state = { rolled: true, bank: { wood: 1, brick: 0, sheep: 0, wheat: 0, ore: 0 } };
+  const me = { res: { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 } };
+  assert.equal(usefulYearAction(state, me), null);
 });
 
 test('免费道路无法继续连接时立即结束筑路，UI 不会卡在剩余一次', () => {
