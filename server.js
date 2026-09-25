@@ -285,8 +285,9 @@ function handleMsg(ws, raw) {
       const { mapSize, targetVP, startBonus, password, withBots, botCount, botDifficulty } = msg.settings || {};
       if (!isHost(room, pl)) return error(ws, '只有房主可以修改设置');
       if (room.game) return error(ws, '游戏已开始');
-      if (botDifficulty !== undefined && !getBotProfile(botDifficulty)) return error(ws, '未知的 AI 难度');
-      if (Object.hasOwn(MAP_LAYOUTS, mapSize)) room.settings.mapSize = mapSize;
+      if (botDifficulty !== undefined && (typeof botDifficulty !== 'string' || !getBotProfile(botDifficulty))) return error(ws, '未知的 AI 难度');
+      if (password !== undefined && password !== null && typeof password !== 'string') return error(ws, '房间密码无效');
+      if (typeof mapSize === 'string' && Object.hasOwn(MAP_LAYOUTS, mapSize)) room.settings.mapSize = mapSize;
       if ([7, 10, 12, 15].includes(targetVP)) room.settings.targetVP = targetVP;
       if (['none', 'random1', 'random2'].includes(startBonus)) room.settings.startBonus = startBonus;
       if (password !== undefined) room.password = String(password || '').trim().slice(0, 24);
@@ -297,7 +298,8 @@ function handleMsg(ws, raw) {
       break;
     }
     case 'rename': {
-      pl.name = (msg.name || '').trim().slice(0, 12) || pl.name;
+      if (typeof msg.name !== 'string') return error(ws, '名字无效');
+      pl.name = msg.name.trim().slice(0, 12) || pl.name;
       broadcastRoom(room);
       break;
     }
@@ -308,7 +310,11 @@ function handleMsg(ws, raw) {
       const configuredBots = room.mode === 'ai-only' || room.settings.withBots
         ? Array.from({ length: room.settings.botCount }, () => ({ difficulty: room.settings.botDifficulty })) : [];
       const bots = room.mode === 'ai-only' ? configuredBots : Array.isArray(msg.bots) ? msg.bots.slice(0, 8) : configuredBots;
-      if (bots.some(spec => !spec || !getBotProfile(spec.difficulty || (spec.type === 'rule' ? 'rule' : DEFAULT_BOT_DIFFICULTY)))) return error(ws, '未知的 AI 难度');
+      // Validate every spec before adding any, so a bad entry cannot leave partial bots in the lobby.
+      const validSpec = spec => spec && typeof spec === 'object'
+        && ['difficulty', 'type', 'name'].every(k => spec[k] === undefined || typeof spec[k] === 'string');
+      if (!bots.every(validSpec)) return error(ws, '机器人配置无效');
+      if (bots.some(spec => !getBotProfile(spec.difficulty || (spec.type === 'rule' ? 'rule' : DEFAULT_BOT_DIFFICULTY)))) return error(ws, '未知的 AI 难度');
       if (room.players.length + bots.length < 2) return error(ws, '至少需要 2 名玩家或机器人');
       if (room.players.length + bots.length > 8) return error(ws, '最多只能有 8 名玩家和机器人');
       for (const spec of bots) addBotPlayer(room, spec || {});

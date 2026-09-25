@@ -564,6 +564,7 @@ function bankTrade(g, pi, give, want) {
 }
 function tradeBundle(value) {
   if (!value || typeof value !== 'object') return null;
+  if (value.res !== undefined && typeof value.res !== 'string') return null;
   const input = value.res ? { [value.res]: value.n } : value;
   if (Object.keys(input).some(r => !RES.includes(r))) return null;
   const out = Object.fromEntries(RES.map(r => [r, input[r] ?? 0]));

@@ -103,3 +103,47 @@ test('静态资源请求：非法路径立即返回错误且不越出 public/', 
     srv.stop();
   }
 });
+
+test('畸形消息字段被拒绝，不会抛错或留下半加入的机器人', { timeout: 10000 }, async () => {
+  const srv = await startServer();
+  const clients = [];
+  try {
+    const code = await createRoom(srv);
+    const host = connect(`${srv.ws}?room=${code}&name=Host`); clients.push(host);
+    await host.next('joined'); await host.next('room');
+    const expectError = async (msg, pattern) => { host.send(msg); assert.match((await host.next('error')).msg, pattern); };
+
+    await expectError({ type: 'rename', name: 42 }, /名字无效/);
+    await expectError({ type: 'rename', name: { toString: null } }, /名字无效/);
+    await expectError({ type: 'settings', settings: { password: { a: 1 } } }, /密码无效/);
+    await expectError({ type: 'settings', settings: { botDifficulty: ['rule'] } }, /未知/);
+    await expectError({ type: 'start', bots: [{ difficulty: 'rule' }, { difficulty: 'rule', name: { toString: 1 } }] }, /机器人配置无效/);
+    await expectError({ type: 'start', bots: [{ difficulty: 'rule' }, null] }, /机器人配置无效/);
+    await expectError({ type: 'start', bots: [{ difficulty: { valueOf: 1 } }] }, /机器人配置无效/);
+    host.send({ type: 'settings', settings: { mapSize: ['small'], targetVP: '10' } });
+    const lobby = (await host.next('room')).room;
+    assert.equal(lobby.players.length, 1, 'no partial bots were added');
+    assert.equal(lobby.settings.mapSize, 'small');
+    assert.equal(lobby.settings.targetVP, 10);
+
+    host.send({ type: 'start', bots: [{ difficulty: 'rule', name: 'Bot' }] });
+    const state = (await host.next('state')).state;
+    assert.equal(state.players.length, 2);
+    for (const action of [
+      null, [], 'roll', { type: 42 }, { type: 'offerTrade', give: { wood: 0 }, want: { res: 'toString', n: 1 } },
+      { type: 'offerTrade', give: { res: { toString: 1 }, n: 1 }, want: { wood: 1 } },
+      { type: 'bankTrade', give: '__proto__', want: 'wood' }, { type: 'discard', res: { wood: '1' } },
+      { type: 'placeSettlement', vertex: { toString: 1 } }, { type: 'moveRobber', hex: ['h1'] },
+    ]) {
+      host.send({ type: 'action', action });
+      await host.next('state');
+    }
+    host.send({ type: 'unknown' }); host.send([1, 2]); host.ws.send('not json'); host.ws.send('null');
+    const alive = connect(`${srv.ws}?room=${code}&name=Late`); clients.push(alive);
+    await alive.next('joined');
+    assert.equal(/MSG ERROR|UNCAUGHT/.test(srv.stderr()), false, srv.stderr());
+  } finally {
+    clients.forEach(c => c.close());
+    srv.stop();
+  }
+});
