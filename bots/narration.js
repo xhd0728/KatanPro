@@ -23,6 +23,16 @@ const TOOL = Object.freeze({
   inspectBuilds: '建造位置', inspectResources: '资源缺口',
   evaluateTrade: '交易收益', inspectRobber: '强盗落点', inspectHistory: '近期局势',
 });
+const OUTCOME = Object.freeze({
+  placeSettlement: '争取更好的资源产出', placeRoad: '为下一处落脚点铺路',
+  buildRoad: '继续拓展可建造路线', buildSettlement: '增加产出并获得胜利点',
+  buildCity: '提高地块产出并获得胜利点', buyDev: '增加发展卡选择',
+  playKnight: '调整强盗位置并积累骑士数', playYear: '补齐下一步所需资源',
+  playMono: '集中取得一种资源', playRoad: '趁机延伸道路',
+  bankTrade: '把资源换成当前更有用的种类', offerTrade: '尝试换取下一步所需资源',
+  acceptOffer: '接受这笔交易', rejectOffer: '暂不接受这笔交易',
+  moveRobber: '尝试牵制对手的资源产出', steal: '从目标玩家取得一张牌',
+});
 
 export function normalizeBotCommentary(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -42,5 +52,5 @@ export function formatBotCommentary({ action, commentary, tools = [] }) {
   if (avoided && reason) return `${looked}${avoided}${reason}，于是选择${choice}。`;
   if (avoided) return `${looked}${avoided}这步选择${choice}。`;
   if (reason) return `${looked}盘算着${reason}，选择${choice}。`;
-  return `${looked}权衡后选择${choice}。`;
+  return `${looked}选择${choice}，${OUTCOME[action.type]}。`;
 }

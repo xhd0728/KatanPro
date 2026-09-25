@@ -192,8 +192,9 @@ export function createGame(settings) {
   return g;
 }
 
-export function addLog(g, player, text, kind = 'event') {
-  g.log.push({ t: Date.now(), color: player ? player.color : null, name: player ? player.name : '系统', text, kind });
+export function addLog(g, player, text, kind = 'event', detail = null) {
+  g.log.push({ t: Date.now(), color: player ? player.color : null, name: player ? player.name : '系统', text, kind,
+    ...(detail ? { detail } : {}) });
   if (g.log.length > 300) g.log.splice(0, g.log.length - 300);
 }
 

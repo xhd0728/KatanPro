@@ -13,6 +13,7 @@ import { MAP_LAYOUTS } from './game/map-layouts.js';
 import { nextBot } from './game/bot-scheduling.js';
 import { DEFAULT_BOT_DIFFICULTY, getBotProfile, listBotProfiles } from './bots/profiles.js';
 import { formatBotCommentary } from './bots/narration.js';
+import { AGENT_TOOLS } from './bots/agent-tools.js';
 import { reconcileBotMemory, rememberBotDecision } from './bots/memory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -106,6 +107,12 @@ const heartbeatTimer = setInterval(() => {
 heartbeatTimer.unref();
 
 function send(ws, obj) { try { ws.readyState === 1 && ws.send(JSON.stringify(obj)); } catch {} }
+
+function broadcastBotProgress(room, game, actor, progress) {
+  if (room.game !== game || (game.winner != null && progress.phase !== 'done')) return;
+  const message = { type: 'bot-progress', gameId: game.id, actor, ...progress };
+  for (const participant of [...room.players, ...room.spectators]) send(participant.ws, message);
+}
 
 function broadcast(room) {
   if (!room.game) return;
@@ -247,6 +254,8 @@ async function runBot(room, bot) {
   const playerId = bot.gamePlayerId;
   const controlEpoch = bot.controlEpoch || 0;
   const state = serialize(game, playerId);
+  const actor = state.viewer;
+  const runId = room.botActionSeq = (room.botActionSeq || 0) + 1;
   const fallback = ruleBotAction(state);
   if (!fallback) return;
   const profile = getBotProfile(bot.difficulty);
@@ -262,6 +271,10 @@ async function runBot(room, bot) {
       remainingCalls: Math.max(0, (profile.ai?.maxTurnCalls || 0) - bot.budget.calls),
       onUsage: count => { bot.budget.calls += count; },
       onDecision: summary => { decision = summary; },
+      onProgress: progress => {
+        if ((bot.controlEpoch || 0) === controlEpoch)
+          broadcastBotProgress(room, game, actor, { ...progress, runId });
+      },
       onFallback: reason => {
         if (room.game === game && bot.lastFallbackReason !== reason) addLog(game, null, `${bot.name}：${reason}，已由规则机器人接手`);
         bot.lastFallbackReason = reason;
@@ -282,13 +295,15 @@ async function runBot(room, bot) {
         if (bot.thoughtTurn !== game.turn) { bot.thoughtTurn = game.turn; bot.thoughtCount = 0; }
         const thought = formatBotCommentary(decision);
         if (thought && bot.thoughtCount < 2) {
-          addLog(game, game.players.find(p => p.id === playerId), thought, 'bot-thought');
+          addLog(game, game.players.find(p => p.id === playerId), thought, 'bot-thought',
+            { tools: decision.tools.filter(tool => Object.hasOwn(AGENT_TOOLS, tool)).slice(0, 2) });
           bot.thoughtCount++;
         }
       }
     }
   } finally {
     room.botBusy = false;
+    broadcastBotProgress(room, game, actor, { phase: 'done', runId });
     broadcast(room);
   }
 }

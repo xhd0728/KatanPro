@@ -875,7 +875,7 @@ input[type=checkbox] {
   gap:8px;
   overflow:auto;
   flex:none;
-  max-height:48%;
+  max-height:39%;
 }
 
 .pcard {
@@ -1118,7 +1118,7 @@ input[type=checkbox] {
   display:flex;
   flex:1;
   flex-direction:column;
-  min-height:150px;
+  min-height:clamp(270px, 34vh, 440px);
   border-top:1px solid var(--line);
   padding-top:12px;
 }
@@ -1126,10 +1126,12 @@ input[type=checkbox] {
 .logtitle {
   display:flex;
   justify-content:space-between;
-  font-size:11px;
+  font-size:12px;
   color:#778776;
-  margin-bottom:8px;
+  margin-bottom:10px;
 }
+
+.logtitle strong { font-size:13px; color:#405e50; letter-spacing:1px; }
 
 .logtitle span {
   font-size:9px;
@@ -1140,7 +1142,7 @@ input[type=checkbox] {
   overflow-y:auto;
   flex:1;
   min-height:0;
-  font-size:10px;
+  font-size:11px;
   line-height:1.65;
   padding-bottom:12px;
 }
@@ -1156,8 +1158,8 @@ input[type=checkbox] {
 }
 
 .logline.bot-thought {
-  margin:7px 0;
-  padding:8px 9px;
+  margin:8px 0;
+  padding:10px 11px;
   border:1px solid #dce8da;
   border-left:3px solid #73997b;
   border-radius:7px;
@@ -1172,9 +1174,28 @@ input[type=checkbox] {
   display:inline-block;
   margin-right:6px;
   color:#5a7860;
-  font-size:9px;
+  font-size:10px;
   font-weight:700;
 }
+
+#botProgress {
+  margin:0 0 10px;
+  padding:10px 11px;
+  border:1px solid #b8d4c5;
+  border-radius:9px;
+  background:#ebf6ef;
+  color:#426452;
+  font-size:11px;
+  line-height:1.5;
+}
+#botProgress[hidden] { display:none; }
+.bot-progress-head { display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
+.bot-progress-head b { color:#355a46; }
+#botProgress small { display:block; margin:4px 0 0 13px; color:#728b76; font-size:10px; }
+.bot-progress-dot { width:7px; height:7px; flex:none; border-radius:50%; background:#51a46d; box-shadow:0 0 0 3px #51a46d25; animation:bot-pulse 1.4s ease-in-out infinite; }
+@keyframes bot-pulse { 50% { opacity:.4; transform:scale(.8); } }
+.thought-tools { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+.thought-tools span { padding:2px 5px; border-radius:4px; background:#e3efe4; color:#4d7557; font-size:9px; }
 
 .hand-tray {
   height:115px;

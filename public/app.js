@@ -41,6 +41,11 @@ function icon(type) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden=
 function resourceIcon(r) { return `<img class="resource-icon" src="/assets/${r}.svg" alt="${CN[r]}" draggable="false"/>`; }
 let actionPending = false, retryAllowed = true, lastDiceStamp = null, pendingBuild = null;
 let ws = null, S = null, myToken = null, pickMode = null, hoverTarget = null, modalKind = null;
+let botProgress = null;
+const BOT_TOOL_LABELS = Object.freeze({ inspectBuilds:'建造位置', inspectResources:'资源缺口',
+  evaluateTrade:'交易收益', inspectRobber:'强盗落点', inspectHistory:'近期局势' });
+const BOT_PHASE_LABELS = Object.freeze({ thinking:'分析当前局面', continue:'继续决策', tool:'读取只读工具结果',
+  repair:'校正不合法的建议', review:'复核关键动作', formatFallback:'切换兼容输出格式' });
 let name = localStorage.getItem('catan_name') || '';
 let reconnectTimer = null, reconnectAttempts = 0;
 let reconnectPassword = '';
@@ -131,6 +136,7 @@ function connect(code, password = '') {
     }
     else if (m.type === 'joined' || m.type === 'room') { showRoom(m.room); }
     else if (m.type === 'state') {
+      if ((S && S.id !== m.state.id) || m.state.winner != null) botProgress = null;
       actionPending = false;
       if (S && (S.id !== m.state.id || S.current !== m.state.current || m.state.eventPending)) {
         pendingBuild = null;
@@ -142,6 +148,18 @@ function connect(code, password = '') {
       render();
       if (modalKind === 'trade') window.refreshTrade?.();
     }
+    else if (m.type === 'bot-progress') {
+      if (!S || m.gameId !== S.id || !Number.isInteger(m.actor) || !S.players[m.actor]) return;
+      if (m.phase === 'done') {
+        if (botProgress?.runId === m.runId) botProgress = null;
+      } else if (Object.hasOwn(BOT_PHASE_LABELS, m.phase)) {
+        if (botProgress?.runId !== m.runId) botProgress = { runId:m.runId, actor:m.actor, tools:[] };
+        botProgress.phase = m.phase;
+        if (m.phase === 'tool' && Object.hasOwn(BOT_TOOL_LABELS, m.tool) && !botProgress.tools.includes(m.tool))
+          botProgress.tools.push(m.tool);
+      }
+      renderBotProgress();
+    }
     else if (m.type === 'error') {
       actionPending = false; toast(m.msg);
       if (/密码|不存在|已满/.test(m.msg)) { retryAllowed = false; connectionStatus('未连接', true); }
@@ -150,6 +168,8 @@ function connect(code, password = '') {
   };
   ws.onclose = e => {
     if (ws !== socket) return;
+    botProgress = null;
+    if (S) renderBotProgress();
     actionPending = false; connectionStatus('连接断开', true);
     if (e.code === 4001) { retryAllowed = false; toast('此席位已在另一个页面打开'); }
     if (!retryAllowed || !roomCode || reconnectTimer) return;
@@ -345,10 +365,24 @@ function renderSidebar() {
   $('#badgeBar').innerHTML = `<div class="achievement">${icon('road')} 最长道路 · +2<b>${esc(S.longest.name || '等待 5 段连路')}${S.longest.len ? ' · ' + S.longest.len + ' 段' : ''}</b></div><div class="achievement">${icon('knight')} 最大骑士团 · +2<b>${esc(S.army.name || '等待 3 张骑士')}</b></div>`;
   $('#bankBar').innerHTML = `<strong>银行储备 <span> / 每种共 ${BANK_SIZE} 张</span></strong>${RES.map(r => `<span title="${CN[r]}剩余 ${S.bank?.[r] ?? BANK_SIZE} 张">${resourceIcon(r)}${S.bank?.[r] ?? BANK_SIZE}</span>`).join('')}`;
   $('#deckLeft').textContent = `发展卡余 ${S.deckLeft}`;
+  renderBotProgress();
   const log = $('#log'), nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 45;
-  log.innerHTML = S.log.map(l => `<div class="logline ${l.kind === 'bot-thought' ? 'bot-thought' : ''}">${l.kind === 'bot-thought' ? '<span class="thought-tag">AI 盘算</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}</b> ${esc(l.text)}</div>`).join('');
+  log.innerHTML = S.log.map(l => {
+    const thought = l.kind === 'bot-thought';
+    const tools = thought && Array.isArray(l.detail?.tools)
+      ? l.detail.tools.filter(tool => Object.hasOwn(BOT_TOOL_LABELS, tool)).slice(0, 2) : [];
+    return `<div class="logline ${thought ? 'bot-thought' : ''}">${thought ? '<span class="thought-tag">AI 决策摘要</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}</b> ${esc(l.text)}${tools.length ? `<div class="thought-tools">${tools.map(tool => `<span>查验 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : ''}</div>`;
+  }).join('');
   if (nearBottom) log.scrollTop = log.scrollHeight;
   renderStats();
+}
+function renderBotProgress() {
+  const box = $('#botProgress');
+  if (!S || !botProgress || !S.players[botProgress.actor]) { box.hidden = true; box.innerHTML = ''; return; }
+  const player = S.players[botProgress.actor];
+  const phase = BOT_PHASE_LABELS[botProgress.phase] || BOT_PHASE_LABELS.thinking;
+  box.hidden = false;
+  box.innerHTML = `<div class="bot-progress-head"><span class="bot-progress-dot"></span><b>${esc(player.name)}</b><span>${phase}…</span></div>${botProgress.tools.length ? `<div class="thought-tools">${botProgress.tools.map(tool => `<span>已查 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : '<small>正在整理公开局势和自己的短期目标</small>'}`;
 }
 function renderHand() {
   const m = me();

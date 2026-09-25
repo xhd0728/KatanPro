@@ -197,7 +197,12 @@ try{
   assert.equal(await run("(()=>{const s=$('#side').getBoundingClientRect();return ['#handTray','#actionbar'].every(id=>$(id).getBoundingClientRect().right<=s.left+1)&&s.bottom<=innerHeight})()"),true,'desktop controls never overlap sidebar');
   assert.equal(await run("(()=>{const e=$('#log').lastElementChild,r=e.getBoundingClientRect();return r.bottom<=innerHeight&&document.elementFromPoint(r.x+10,r.y+r.height/2)?.closest('#log')!==null})()"),true,'last log remains visible with eight players and statistics');
   assert.equal(await run("document.querySelectorAll('#log .bot-thought').length"),1,'agent summary uses its own visible log style');
+  await run(`ws.onmessage({data:JSON.stringify({type:'bot-progress',gameId:S.id,actor:1,runId:99,phase:'thinking'})});ws.onmessage({data:JSON.stringify({type:'bot-progress',gameId:S.id,actor:1,runId:99,phase:'tool',tool:'inspectBuilds'})})`);
+  assert.equal(await run("!$('#botProgress').hidden && $('#botProgress').textContent.includes('已查 建造位置')"),true,'live tool status is visible');
+  assert.equal(await run("$('#log').getBoundingClientRect().height>=100 && $('.logbox').getBoundingClientRect().height>=270"),true,'island activity has a larger dedicated area');
   await screenshot('sidebar-eight-players');
+  await run(`ws.onmessage({data:JSON.stringify({type:'bot-progress',gameId:S.id,actor:1,runId:99,phase:'done'})})`);
+  assert.equal(await run("$('#botProgress').hidden"),true,'live status clears after the decision');
   const dockSize=await run("({h:$('#handTray').offsetHeight,a:$('#actionbar').offsetHeight})");
   const dockCard=await run("(()=>{const r=$('.hand-card').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
   await call('Input.dispatchMouseEvent',{type:'mouseMoved',...dockCard});await pause(200);
