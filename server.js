@@ -298,6 +298,9 @@ function handleMsg(ws, raw) {
       break;
     }
     case 'rename': {
+      if (pl.kind !== 'human') return error(ws, '观战者不能改名');
+      // The game keeps its own copy of names, so renaming mid-game would desync logs and board.
+      if (room.game) return error(ws, '对局开始后不能改名');
       if (typeof msg.name !== 'string') return error(ws, '名字无效');
       pl.name = msg.name.trim().slice(0, 12) || pl.name;
       broadcastRoom(room);

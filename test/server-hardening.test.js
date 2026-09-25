@@ -1,14 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+async function freePort() {
+  const probe = net.createServer().listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address();
+  await new Promise(resolve => probe.close(resolve));
+  return port;
+}
+
 async function startServer(env = {}) {
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  const port = await freePort();
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', CATAN_AI_BASE_URL: '', CATAN_AI_MODEL: '', CATAN_AI_KEY: '', ...env },
@@ -17,9 +26,11 @@ async function startServer(env = {}) {
   let stderr = '';
   child.stderr.on('data', d => { stderr += d; });
   const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 100; i++) {
-    try { await fetch(`${base}/api/rooms`); break; } catch { await sleep(30); }
+  let ready = false;
+  for (let i = 0; i < 100 && !ready; i++) {
+    try { ready = Array.isArray(await fetch(`${base}/api/rooms`).then(r => r.json())); } catch { await sleep(30); }
   }
+  assert.equal(ready, true, 'server started');
   return { port, base, ws: `ws://127.0.0.1:${port}/ws`, stderr: () => stderr, stop: () => child.kill() };
 }
 
@@ -100,6 +111,37 @@ test('静态资源请求：非法路径立即返回错误且不越出 public/', 
     assert.equal(await status('/index.html'), 200);
     assert.equal(srv.stderr().includes('UNCAUGHT'), false);
   } finally {
+    srv.stop();
+  }
+});
+
+test('只有大厅中的真人玩家可以改名', { timeout: 10000 }, async () => {
+  const srv = await startServer();
+  const clients = [];
+  try {
+    const code = await createRoom(srv);
+    const host = connect(`${srv.ws}?room=${code}&name=Host`); clients.push(host);
+    await host.next('joined'); await host.next('room');
+    host.send({ type: 'rename', name: '  新名字很长很长很长很长很长  ' });
+    assert.equal((await host.next('room')).room.players[0].name, '新名字很长很长很长很长很长'.slice(0, 12));
+
+    host.send({ type: 'start', bots: [{ difficulty: 'rule', name: 'Bot' }] });
+    await host.next('state');
+    host.send({ type: 'rename', name: 'Other' });
+    assert.match((await host.next('error')).msg, /对局开始后/);
+
+    const spectator = connect(`${srv.ws}?room=${code}&name=Viewer`); clients.push(spectator);
+    await spectator.next('joined');
+    spectator.send({ type: 'rename', name: 'Host' });
+    assert.match((await spectator.next('error')).msg, /观战者/);
+
+    const aiCode = await createRoom(srv, 'ai-only');
+    const director = connect(`${srv.ws}?room=${aiCode}&name=Director`); clients.push(director);
+    await director.next('joined');
+    director.send({ type: 'rename', name: 'X' });
+    assert.match((await director.next('error')).msg, /观战者/);
+  } finally {
+    clients.forEach(c => c.close());
     srv.stop();
   }
 });
