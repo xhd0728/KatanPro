@@ -27,6 +27,8 @@ jobs:
       - name: Run game and network tests
         run: npm test
       - name: Run browser tests
+        env:
+          UI_CHROME_STARTUP_TIMEOUT_MS: 45000
         run: npm run test:ui
       - name: Build single executable
         run: npm run build

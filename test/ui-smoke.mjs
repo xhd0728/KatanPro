@@ -13,13 +13,14 @@ if(!chromeBin) throw new Error('Set CHROME_BIN to a Chrome/Chromium executable.'
 const port=22000+Math.floor(Math.random()*8000),origin=`http://127.0.0.1:${port}`;
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'catan-ui-'));
 const output=path.resolve('artifacts/ui');fs.mkdirSync(output,{recursive:true});
+const chromeStartupTimeout=Math.max(5000,Number(process.env.UI_CHROME_STARTUP_TIMEOUT_MS)||30000);
 const server=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:String(port),CATAN_AI_BASE_URL:'',CATAN_AI_MODEL:'',CATAN_AI_KEY:''},stdio:'ignore'});
 const chrome=spawn(chromeBin,['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{stdio:['ignore','ignore','pipe']});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 let socket;const errors=[];let seq=0;const callbacks=new Map();
 try{
   const endpoint=await new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>reject(new Error('Chrome startup timed out')),12000);
+    const timer=setTimeout(()=>reject(new Error(`Chrome startup timed out after ${chromeStartupTimeout}ms`)),chromeStartupTimeout);
     chrome.stderr.on('data',b=>{const match=b.toString().match(/DevTools listening on (ws:\/\/[^\s]+)/);if(match){clearTimeout(timer);resolve(match[1]);}});
     chrome.on('error',reject);
   });
