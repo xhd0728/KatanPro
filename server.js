@@ -19,6 +19,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 const configuredTakeoverMs = Number(process.env.CATAN_DISCONNECT_TAKEOVER_MS || 15000);
 const DISCONNECT_TAKEOVER_MS = Number.isFinite(configuredTakeoverMs) && configuredTakeoverMs >= 0
   ? Math.floor(configuredTakeoverMs) : 15000;
+const configuredUnclaimedMs = Number(process.env.CATAN_UNCLAIMED_ROOM_MS || 60000);
+const UNCLAIMED_ROOM_MS = Number.isFinite(configuredUnclaimedMs) && configuredUnclaimedMs >= 0
+  ? Math.floor(configuredUnclaimedMs) : 60000;
+const configuredMaxRooms = Number(process.env.CATAN_MAX_ROOMS || 500);
+const MAX_ROOMS = Number.isInteger(configuredMaxRooms) && configuredMaxRooms > 0 ? configuredMaxRooms : 500;
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('PORT 必须是 1–65535 的整数');
 const AI_CONFIG = { ...DEFAULT_AI_CONFIG };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
@@ -105,7 +110,7 @@ function isHost(room, pl) { return room.hostToken === pl?.token; }
 function broadcastRoom(room) {
   for (const p of [...room.players, ...room.spectators]) send(p.ws, { type: 'room', room: publicRoom(room, p) });
 }
-function scheduleEmptyRoomCleanup(room) {
+function scheduleEmptyRoomCleanup(room, delay = 10 * 60 * 1000) {
   clearTimeout(room.emptyTimer);
   if ([...room.players, ...room.spectators].some(p => p.ws)) return;
   room.emptyTimer = setTimeout(() => {
@@ -113,7 +118,7 @@ function scheduleEmptyRoomCleanup(room) {
     clearTimeout(room.botTimer); clearTimeout(room.offerTimer);
     room.game = null;
     rooms.delete(room.code);
-  }, 10 * 60 * 1000);
+  }, delay);
   room.emptyTimer.unref();
 }
 
@@ -127,7 +132,11 @@ wss.on('connection', (ws, req) => {
   const code = (url.searchParams.get('room') || '').toUpperCase();
   const name = (url.searchParams.get('name') || '').trim().slice(0, 12) || '玩家';
   let room = rooms.get(code);
-  if (!code) { send(ws, { type: 'created', code: createRoom(url.searchParams.get('mode')) }); return; }
+  if (!code) {
+    if (rooms.size >= MAX_ROOMS) { error(ws, '服务器房间数已达上限，请稍后再试'); return ws.close(); }
+    send(ws, { type: 'created', code: createRoom(url.searchParams.get('mode')) });
+    return;
+  }
   if (!room) { error(ws, '房间不存在或已解散'); return ws.close(); }
   const token = url.searchParams.get('token');
   const old = token && [...room.players, ...room.spectators].find(p => p.kind !== 'bot' && p.token === token);
@@ -244,11 +253,15 @@ function createRoom(requestedMode) {
   const mode = requestedMode === 'ai-only' ? 'ai-only' : 'multiplayer';
   let code;
   do { code = genCode(); } while (rooms.has(code));
-  rooms.set(code, { code, mode, players: [], spectators: [], game: null, hostToken: null, password: '', settings: { mapSize: 'small', targetVP: 10, startBonus: 'none', withBots: mode === 'ai-only', botCount: mode === 'ai-only' ? 4 : 2, botDifficulty: DEFAULT_BOT_DIFFICULTY } });
+  const room = { code, mode, players: [], spectators: [], game: null, hostToken: null, password: '', settings: { mapSize: 'small', targetVP: 10, startBonus: 'none', withBots: mode === 'ai-only', botCount: mode === 'ai-only' ? 4 : 2, botDifficulty: DEFAULT_BOT_DIFFICULTY } };
+  rooms.set(code, room);
+  // Rooms nobody joins would otherwise stay in memory and the lobby forever.
+  scheduleEmptyRoomCleanup(room, UNCLAIMED_ROOM_MS);
   return code;
 }
 function joinPlayer(room, ws, name) {
   const pl = { ws, name, token: randomBytes(8).toString('base64url'), kind: 'human', gamePlayerId: null, botTakeover: false, controlEpoch: 0, gp() { return room.game ? room.game.players.find(p => p.id === pl.gamePlayerId) : null; } };
+  clearTimeout(room.emptyTimer);
   room.players.push(pl);
   if (!room.hostToken) room.hostToken = pl.token;
   ws.__pl = pl; ws.__room = room;

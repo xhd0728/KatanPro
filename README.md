@@ -92,6 +92,8 @@ npm run build
 | `CATAN_AI_KEY` | 接口密钥 | 空 |
 | `CATAN_AI_TIMEOUT_MS` | 模型请求超时（毫秒） | `9000` |
 | `CATAN_DISCONNECT_TAKEOVER_MS` | 断线后交给规则 Bot 临时接管的等待时间（毫秒） | `15000` |
+| `CATAN_UNCLAIMED_ROOM_MS` | 新建后无人加入的房间保留时间（毫秒） | `60000` |
+| `CATAN_MAX_ROOMS` | 服务器同时存在的房间数上限 | `500` |
 
 ## 玩法
 
