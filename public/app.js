@@ -227,10 +227,10 @@ const botCount = $('#botCount');
 const botDifficulty = $('#botDifficulty');
 let botProfiles = [
   {id:'low',description:'纯本地规则策略，不调用外部模型，速度最快。'},
-  {id:'medium',description:'轻量大模型辅助，优先遵循规则建议，失败时自动回退。'},
-  {id:'high',description:'标准大模型决策，使用当前局面的关键候选与资源信息。'},
-  {id:'very-high',description:'大模型决策并提供更完整的地图、路线和对手信息。'},
-  {id:'highest',description:'最多两次只读工具查询、五次模型调用；会复核动作并给出公开策略摘要。'},
+  {id:'medium',description:'近期公开历史辅助的一次模型决策；失败时自动回退规则策略。'},
+  {id:'high',description:'近期历史与短期目标；每步最多两次调用、一次只读查询或动作修正。'},
+  {id:'very-high',description:'详细局面与跨回合计划；每步最多三次调用、一次只读查询。'},
+  {id:'highest',description:'跨回合计划与公开历史；每步最多五次调用、两次只读查询和复核。'},
 ];
 const botCatalogReady = fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
   const selected = currentRoom?.settings.botDifficulty || botDifficulty.value || catalog.defaultDifficulty;

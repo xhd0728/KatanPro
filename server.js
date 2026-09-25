@@ -13,6 +13,7 @@ import { MAP_LAYOUTS } from './game/map-layouts.js';
 import { nextBot } from './game/bot-scheduling.js';
 import { DEFAULT_BOT_DIFFICULTY, getBotProfile, listBotProfiles } from './bots/profiles.js';
 import { formatBotCommentary } from './bots/narration.js';
+import { reconcileBotMemory, rememberBotDecision } from './bots/memory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -248,11 +249,18 @@ async function runBot(room, bot) {
   const state = serialize(game, playerId);
   const fallback = ruleBotAction(state);
   if (!fallback) return;
+  const profile = getBotProfile(bot.difficulty);
+  bot.memory = reconcileBotMemory(bot.memory, state);
+  if (bot.budget?.gameId !== game.id || bot.budget?.turn !== game.turn)
+    bot.budget = { gameId: game.id, turn: game.turn, calls: 0 };
   room.botBusy = true;
   try {
     let decision = null;
-    const action = bot.botTakeover ? fallback : await getBotProfile(bot.difficulty).decide({
+    const action = bot.botTakeover ? fallback : await profile.decide({
       state, config: AI_CONFIG, fallback,
+      memory: bot.memory,
+      remainingCalls: Math.max(0, (profile.ai?.maxTurnCalls || 0) - bot.budget.calls),
+      onUsage: count => { bot.budget.calls += count; },
       onDecision: summary => { decision = summary; },
       onFallback: reason => {
         if (room.game === game && bot.lastFallbackReason !== reason) addLog(game, null, `${bot.name}：${reason}，已由规则机器人接手`);
@@ -267,12 +275,16 @@ async function runBot(room, bot) {
     if (err) {
       const freshFallback = ruleBotAction(serialize(game, playerId));
       if (freshFallback) playerAct(game, playerId, freshFallback);
-    } else if (decision) {
-      if (bot.thoughtTurn !== game.turn) { bot.thoughtTurn = game.turn; bot.thoughtCount = 0; }
-      const thought = formatBotCommentary(decision);
-      if (thought && bot.thoughtCount < 2) {
-        addLog(game, game.players.find(p => p.id === playerId), thought, 'bot-thought');
-        bot.thoughtCount++;
+    } else {
+      const after = serialize(game, playerId);
+      bot.memory = decision ? rememberBotDecision(bot.memory, state, after, decision) : reconcileBotMemory(bot.memory, after);
+      if (decision && profile.ai?.agentLoop) {
+        if (bot.thoughtTurn !== game.turn) { bot.thoughtTurn = game.turn; bot.thoughtCount = 0; }
+        const thought = formatBotCommentary(decision);
+        if (thought && bot.thoughtCount < 2) {
+          addLog(game, game.players.find(p => p.id === playerId), thought, 'bot-thought');
+          bot.thoughtCount++;
+        }
       }
     }
   } finally {

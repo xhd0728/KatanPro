@@ -21,7 +21,7 @@ const REASON = Object.freeze({
 });
 const TOOL = Object.freeze({
   inspectBuilds: '建造位置', inspectResources: '资源缺口',
-  evaluateTrade: '交易收益', inspectRobber: '强盗落点',
+  evaluateTrade: '交易收益', inspectRobber: '强盗落点', inspectHistory: '近期局势',
 });
 
 export function normalizeBotCommentary(value) {

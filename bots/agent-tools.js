@@ -13,6 +13,7 @@ export const AGENT_TOOLS = Object.freeze({
   inspectResources: '查看一种建造目标的资源缺口和可用银行兑换；参数 {"goal":"road|settlement|city|dev"}',
   evaluateTrade: '试算银行或玩家交易对自己资源与建造目标的影响；参数 {"mode":"bank|player","give":...,"want":...}',
   inspectRobber: '按公开建筑产出和分数比较强盗落点；参数 {"limit":5}',
+  inspectHistory: '查看最近已执行的公开动作，了解交易、扩张和强盗走向；参数 {"limit":8,"actor":玩家编号可选}',
 });
 
 export function runAgentTool(state, name, args = {}) {
@@ -23,6 +24,12 @@ export function runAgentTool(state, name, args = {}) {
   const canTradeNow = state.phase === 'play' && state.viewer === state.current && state.rolled &&
     !state.eventPending && !state.offer && !state.roadBuildLeft && !state.needMoveRobber &&
     !state.stealFrom?.length && !me.needDiscard;
+  if (name === 'inspectHistory') {
+    if (args.actor !== undefined && (!Number.isInteger(args.actor) || args.actor < 0 || args.actor >= state.players.length))
+      return { ok: false, error: '玩家编号无效' };
+    const events = (state.history || []).filter(e => args.actor === undefined || e.actor === args.actor);
+    return { ok: true, events: events.slice(-Math.max(1, Math.min(12, Number.isInteger(args.limit) ? args.limit : 8))) };
+  }
   if (name === 'inspectBuilds') {
     const kind = args.kind;
     if (!['settlement', 'city', 'road'].includes(kind)) return { ok: false, error: '建造类型无效' };

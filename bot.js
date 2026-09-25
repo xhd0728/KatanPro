@@ -1,6 +1,7 @@
 import { RES, BANK_SIZE } from './game/engine.js';
 import { AGENT_TOOLS, runAgentTool } from './bots/agent-tools.js';
 import { normalizeBotCommentary } from './bots/narration.js';
+import { botMemoryContext, normalizeBotPlan } from './bots/memory.js';
 
 const pick = (items) => items[Math.floor(Math.random() * items.length)];
 export const canAffordBundle = (res, bundle) => !!res && !!bundle && RES.every(r => res[r] >= (bundle[r] || 0));
@@ -187,7 +188,7 @@ export function normalizeAIAction(value) {
   return allowed.has(action.type) ? action : null;
 }
 
-export function normalizeAgentStep(value) {
+export function normalizeAgentStep(value, state = null) {
   const parsed = parseAIJson(value);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   if (typeof parsed.tool === 'string') {
@@ -196,8 +197,9 @@ export function normalizeAgentStep(value) {
   }
   const action = normalizeAIAction(parsed);
   if (!action) return null;
-  const { commentary: _commentary, note: _note, ...cleanAction } = action;
-  return { action: cleanAction, commentary: normalizeBotCommentary(parsed.commentary ?? parsed.note) };
+  const { commentary: _commentary, note: _note, plan: _plan, ...cleanAction } = action;
+  return { action: cleanAction, commentary: normalizeBotCommentary(parsed.commentary ?? parsed.note),
+    plan: state ? normalizeBotPlan(parsed.plan, state) : null };
 }
 
 export function isUsefulAIAction(state, action) {
@@ -338,16 +340,20 @@ function agentActionGuide(state) {
   return actions;
 }
 
-export async function aiBotAction(state, config, fallback, onFallback = () => {}, strategy = {}, onDecision = () => {}) {
+export async function aiBotAction(state, config, fallback, onFallback = () => {}, strategy = {}, onDecision = () => {}, runtime = {}) {
   if (state.phase === 'play' && !state.rolled && fallback?.type === 'roll') return fallback;
-  if (!config?.baseUrl || !config?.model || !config?.apiKey) { onFallback('模型配置不完整'); return fallback; }
+  const model = config?.models?.[strategy.id] || config?.model;
+  if (!config?.baseUrl || !model || !config?.apiKey) { onFallback('模型配置不完整'); return fallback; }
+  const maxCalls = Math.max(0, Math.min(strategy.maxCalls ?? (strategy.agentLoop ? 5 : 1), runtime.remainingCalls ?? Infinity));
+  if (!maxCalls) return fallback;
   const controller = new AbortController();
-  const budget = (Number(config.timeout) || 9000) * (strategy.agentLoop ? 2 : 1);
+  const budget = (Number(config.timeout) || 9000) * (strategy.timeoutMultiplier || 1);
   const timeout = setTimeout(() => controller.abort(), Math.max(1000, Math.min(strategy.agentLoop ? 30000 : 20000, budget)));
   let best = null;
+  let usedCalls = 0;
   const usedTools = [];
   const finishBest = () => {
-    if (strategy.agentLoop) onDecision({ action: best.action, commentary: best.commentary, tools: [...usedTools] });
+    onDecision({ action: best.action, commentary: best.commentary, plan: best.plan, tools: [...usedTools] });
     return best.action;
   };
   try {
@@ -363,14 +369,16 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     else if (state.roadBuildLeft) task = '先完成筑路工：从 choices.road 中选择一条免费道路。只返回 JSON，例如 {"type":"buildRoad","edge":"e1"}。';
     else if (!state.rolled) task = '现在应先掷骰。只返回 JSON：{"type":"roll"}。';
     else task = '卡坦岛当前回合。可考虑定居点、城市、道路、发展卡、银行兑换、向玩家报价或结束回合。根据当前合法动作和 choices 选择一步；不确定时返回建议动作。';
-    const agentInstructions = strategy.agentLoop ? `\n可用的只读工具：${JSON.stringify(AGENT_TOOLS)}。最多查询两次，可先比较位置、资源、交易或强盗目标。工具调用格式：{"tool":"inspectResources","args":{"goal":"city"}}。最终动作格式：{"action":{"type":"buildCity","vertex":"v1"},"commentary":{"avoid":"road","reason":"urgentScore"}}。commentary 只用于公共日志，不写自由文本或私有手牌；avoid 可选 road/settlement/city/development/bankTrade/playerTrade/robber/endTurn，reason 可选 scarceResources/weakProduction/urgentScore/opponentLead/blockedRoute/handRisk/betterPort/timing。也可直接返回普通 JSON 动作。当前可执行动作类型：${JSON.stringify(agentActionGuide(state))}。` : '';
-    const prompt = `${task}${agentInstructions}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}`;
+    const planInstruction = '可随动作提供简短结构化计划 plan:{"goal":"road|settlement|city|development|longestRoad|army|trade","target":"合法交点或边，可省略","resource":"wood|brick|sheep|wheat|ore，可省略"}；不要写自由文本或假设对手隐藏手牌。';
+    const toolInstructions = strategy.maxTools ? `可用的只读工具：${JSON.stringify(AGENT_TOOLS)}。最多查询${strategy.maxTools}次。工具调用格式：{"tool":"inspectHistory","args":{"limit":8}}。` : '';
+    const agentInstructions = strategy.agentLoop ? `\n${toolInstructions}最终动作格式：{"action":{"type":"buildCity","vertex":"v1"},"plan":{"goal":"city"},"commentary":{"avoid":"road","reason":"urgentScore"}}。commentary 只用于公共日志，不写自由文本或私有手牌；avoid 可选 road/settlement/city/development/bankTrade/playerTrade/robber/endTurn，reason 可选 scarceResources/weakProduction/urgentScore/opponentLead/blockedRoute/handRisk/betterPort/timing。${planInstruction}也可直接返回普通 JSON 动作。当前可执行动作类型：${JSON.stringify(agentActionGuide(state))}。` : `\n${planInstruction}`;
+    const prompt = `${task}${agentInstructions}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}\n历史与计划：${JSON.stringify(botMemoryContext(state, runtime.memory, strategy.historyLimit))}`;
     const request = async (messages, temperature) => fetch(endpoint, {
       method: 'POST',
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify({
-        model: config.model,
+        model,
         temperature: temperature ?? strategy.temperature ?? 0.7,
         top_p: 0.8,
         max_tokens: strategy.agentLoop ? 640 : 512,
@@ -408,12 +416,12 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       return JSON.parse(new TextDecoder().decode(bytes));
     };
     // The server executes one action at a time and serializes a fresh state afterward.
-    // At the highest difficulty, this bounded inner loop can repair or reconsider one
+    // At higher difficulties, this bounded inner loop can repair or reconsider one
     // proposed action without mutating game state or reading opponents' hidden cards.
     const messages = [{ role: 'user', content: prompt }];
-    const maxCalls = strategy.agentLoop ? 5 : 1;
     const seenTools = new Set();
     for (let attempt = 0; attempt < maxCalls; attempt++) {
+      usedCalls++;
       const response = await request(messages, attempt ? Math.min(0.2, strategy.temperature ?? 0.2) : strategy.temperature);
       if (!response.ok) {
         if (best) return finishBest();
@@ -422,11 +430,11 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       }
       const data = await readJson(response);
       const content = data?.choices?.[0]?.message?.content;
-      const step = strategy.agentLoop ? normalizeAgentStep(content) : { action: normalizeAIAction(content) };
+      const step = normalizeAgentStep(content, state);
       if (step?.tool) {
         const key = JSON.stringify([step.tool, step.args]);
         const oversized = key.length > 1000;
-        const result = oversized ? { ok: false, error: '工具参数过长' } : usedTools.length >= 2 || seenTools.has(key)
+        const result = oversized ? { ok: false, error: '工具参数过长' } : usedTools.length >= (strategy.maxTools || 0) || seenTools.has(key)
           ? { ok: false, error: '工具调用已达上限或重复；请立即选择动作' }
           : runAgentTool(state, step.tool, step.args);
         if (!oversized) seenTools.add(key);
@@ -441,7 +449,8 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       const valid = isUsefulAIAction(state, action);
       if (valid) {
         const unchanged = best && JSON.stringify(best.action) === JSON.stringify(action);
-        best = { action, commentary: step.commentary || (unchanged ? best.commentary : null) };
+        best = { action, commentary: step.commentary || (unchanged ? best.commentary : null),
+          plan: step.plan || (unchanged ? best.plan : null) };
         if (!strategy.agentLoop || action.type === 'roll' || unchanged || attempt === maxCalls - 1) return finishBest();
         messages.push({ role: 'assistant', content: JSON.stringify(action) });
         messages.push({ role: 'user', content: '复核这个合法动作：比较胜利点、产出、下一步建造资源、扩张路线和领先对手。不得假设对手隐藏手牌的种类。若它已是较好选择，原样返回；否则可查询尚未用过的工具，或返回一个更好的合法 JSON 动作。' });
@@ -459,5 +468,6 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     return fallback;
   } finally {
     clearTimeout(timeout);
+    if (usedCalls) runtime.onUsage?.(usedCalls);
   }
 }

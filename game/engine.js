@@ -184,7 +184,7 @@ export function createGame(settings) {
     dice: null, tally: {}, discardQueue: [], needMoveRobber: false,
     stealFrom: [], pendingStealer: null,
     roadBuildLeft: 0, devPlayedTurn: null, longest: { holder: null, len: 0 }, army: { holder: null, count: 0 },
-    offer: null, winner: null, log: [], turn: 1,
+    offer: null, winner: null, log: [], events: [], eventSeq: 0, pendingStealEvent: null, turn: 1,
   };
   for (const p of players) for (const r of RES) g.bank[r] -= p.res[r];
   addLog(g, null, `游戏开始：${({ small: '小地图', medium: '中地图', large: '大地图', epic: '超大大陆', twin: '双岛地峡' })[mapSize] || '小地图'} ${map.hexes.length} 块 · ${targetVP} 分获胜`);
@@ -249,6 +249,48 @@ export function legalBuild(g, p, freeMode = false) {
 
 // ---------- 动作入口 ----------
 export function playerAct(g, playerId, act) {
+  const player = g.players.find(p => p.id === playerId);
+  const before = { turn: g.turn, offer: g.offer, cards: player ? total(player) : 0 };
+  const result = applyPlayerAct(g, playerId, act);
+  if (result === null) recordPublicAction(g, playerId, act, before);
+  return result;
+}
+
+function recordPublicAction(g, playerId, act, before) {
+  const actor = g.players.findIndex(p => p.id === playerId);
+  if (actor < 0 || !act || typeof act.type !== 'string') return;
+  if (act.type === 'cancelOffer' && !before.offer) return;
+  const steal = g.pendingStealEvent;
+  g.pendingStealEvent = null;
+  if (act.type === 'steal') {
+    if (steal) pushPublicEvent(g, steal.turn, steal.actor, 'steal', { from: steal.from });
+    return;
+  }
+  const data = {};
+  switch (act.type) {
+    case 'placeSettlement': case 'buildSettlement': case 'buildCity': data.vertex = act.vertex; break;
+    case 'placeRoad': case 'buildRoad': data.edge = act.edge; break;
+    case 'roll': data.sum = g.dice ? g.dice.a + g.dice.b : null; break;
+    case 'discard': data.count = Math.floor(before.cards / 2); break;
+    case 'moveRobber': data.hex = act.hex; break;
+    case 'playYear': data.resources = [act.r1, act.r2]; break;
+    case 'playMono': data.resource = act.res; break;
+    case 'bankTrade': data.give = act.give; data.want = act.want;
+      data.rate = portRate(g, g.players[actor], act.give); break;
+    case 'offerTrade':
+      data.give = { ...g.offer.give }; data.want = { ...g.offer.want }; data.targets = [...g.offer.targets]; break;
+    case 'acceptOffer': case 'rejectOffer': case 'cancelOffer': data.from = before.offer?.from; break;
+  }
+  pushPublicEvent(g, before.turn, actor, act.type, data);
+  if (steal) pushPublicEvent(g, steal.turn, steal.actor, 'steal', { from: steal.from });
+}
+
+function pushPublicEvent(g, turn, actor, type, data) {
+  g.events.push({ seq: ++g.eventSeq, turn, actor, type, data });
+  if (g.events.length > 300) g.events.splice(0, g.events.length - 300);
+}
+
+function applyPlayerAct(g, playerId, act) {
   if (!act || typeof act !== 'object') return '无效操作';
   const idx = g.players.findIndex(p => p.id === playerId);
   if (idx < 0) return '你不在本局游戏中';
@@ -429,7 +471,10 @@ function doStealFrom(g, pi, fi) {
   g.stealFrom = []; g.pendingStealer = null;
   const from = g.players[fi];
   const r = stealRandomOne(g, g.players[pi], from);
-  if (r) addLog(g, g.players[pi], `抢走了 ${from.name} 的 1 张资源卡`);
+  if (r) {
+    addLog(g, g.players[pi], `抢走了 ${from.name} 的 1 张资源卡`);
+    g.pendingStealEvent = { turn: g.turn, actor: pi, from: fi };
+  }
   checkWin(g);
   return null;
 }
@@ -723,6 +768,7 @@ export function serialize(g, viewerId) {
     needMoveRobber: !g.discardQueue.length && g.needMoveRobber && vi === g.current,
     stealFrom: g.pendingStealer === vi ? g.stealFrom : [],
     log: g.log.slice(-80),
+    history: g.events.slice(-32),
     cards: vi >= 0 ? {
       knight: g.players[vi].dev.knight, year: g.players[vi].dev.year,
       mono: g.players[vi].dev.mono, road: g.players[vi].dev.road,

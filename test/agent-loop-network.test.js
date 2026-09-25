@@ -5,8 +5,8 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 
-test('最高档工具查询和结构化盘算进入真实对局日志，私有文字不外泄', { timeout: 15000 }, async () => {
-  let calls = 0, sawToolResult = false;
+test('最高档跨动作记忆、工具查询和结构化盘算进入真实对局，私有文字不外泄', { timeout: 15000 }, async () => {
+  let calls = 0, sawToolResult = false, sawPlan = false, sawPublicHistory = false;
   const mock = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -14,13 +14,17 @@ test('最高档工具查询和结构化盘算进入真实对局日志，私有�
       calls++;
       const body = JSON.parse(Buffer.concat(chunks).toString());
       const messages = body.messages;
+      const context = JSON.parse(messages[0].content.split('\n历史与计划：')[1]);
+      if (context.plan?.goal === 'city') sawPlan = true;
+      if (context.recentEvents.some(e => e.type === 'placeSettlement')) sawPublicHistory = true;
       const match = messages[0].content.match(/建议动作：([^\n]+)\n状态：/);
       assert.ok(match);
       const fallback = JSON.parse(match[1]);
       if (messages.some(m => m.content.includes('totalChoices'))) sawToolResult = true;
       const reply = calls === 1
         ? { tool: 'inspectBuilds', args: { kind: 'settlement' } }
-        : { action: fallback, commentary: { avoid: 'road', reason: 'urgentScore', text: '秘密手牌 99 矿石 <script>' } };
+        : { action: fallback, plan: { goal: 'city', resource: 'ore', text: '秘密手牌 99 矿石' },
+          commentary: { avoid: 'road', reason: 'urgentScore', text: '秘密手牌 99 矿石 <script>' } };
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }));
     });
@@ -68,7 +72,7 @@ test('最高档工具查询和结构化盘算进入真实对局日志，私有�
       const handler = raw => {
         const msg = JSON.parse(raw);
         const item = msg.type === 'state' && msg.state.log.find(l => l.kind === 'bot-thought');
-        if (item) { viewer.off('message', handler); resolve({ item, state: msg.state }); }
+        if (item && sawPlan && sawPublicHistory) { viewer.off('message', handler); resolve({ item, state: msg.state }); }
       };
       viewer.on('message', handler);
     });
@@ -77,10 +81,12 @@ test('最高档工具查询和结构化盘算进入真实对局日志，私有�
     const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('thought log timeout')), 10000); });
     const { item, state } = await Promise.race([thought, timeout]);
     clearTimeout(timer);
-    assert.ok(calls >= 3 && sawToolResult, 'the model receives a read-only tool result before acting');
+    assert.ok(calls >= 4 && sawToolResult && sawPlan && sawPublicHistory,
+      'the model receives tool output and its own plan plus executed public events on its next action');
     assert.match(item.text, /觉得继续修路先等等/);
     assert.doesNotMatch(JSON.stringify(state.log), /秘密手牌|99 矿石|<script>/);
     assert.equal(state.players.every(p => p.res === null), true, 'spectators still cannot see hidden hands');
+    assert.doesNotMatch(JSON.stringify(state.history), /秘密手牌|99 矿石|<script>/);
     assert.ok(state.players.some(p => p.settlements > 0), 'the validated action was executed');
   } finally {
     for (const ws of sockets) ws.terminate();

@@ -2,6 +2,10 @@ import { aiBotAction } from '../bot.js';
 
 export const DEFAULT_BOT_DIFFICULTY = 'medium';
 
+const decideWithModel = (id, { state, config, fallback, onFallback, onDecision, memory, remainingCalls, onUsage }) =>
+  aiBotAction(state, config, fallback, onFallback, BOT_PROFILES[id].ai, onDecision,
+    { memory, remainingCalls, onUsage });
+
 // Add profiles here. decide receives only the current player's serialized view,
 // server-side credentials, a legal fallback, and callbacks for fallback notices
 // and validated agent decisions.
@@ -14,27 +18,27 @@ export const BOT_PROFILES = Object.freeze({
   },
   medium: {
     label: '中',
-    description: '轻量大模型辅助，优先遵循规则建议，失败时自动回退。',
-    ai: { temperature: 0.85, stateDetail: 'compact' },
-    decide: ({ state, config, fallback, onFallback }) => aiBotAction(state, config, fallback, onFallback, BOT_PROFILES.medium.ai),
+    description: '近期公开历史辅助的一次模型决策；失败时自动回退规则策略。',
+    ai: { id: 'medium', temperature: 0.85, stateDetail: 'compact', historyLimit: 4, maxCalls: 1, maxTools: 0, maxTurnCalls: 4 },
+    decide: args => decideWithModel('medium', args),
   },
   high: {
     label: '高',
-    description: '标准大模型决策，使用当前局面的关键候选与资源信息。',
-    ai: { temperature: 0.55, stateDetail: 'compact' },
-    decide: ({ state, config, fallback, onFallback }) => aiBotAction(state, config, fallback, onFallback, BOT_PROFILES.high.ai),
+    description: '近期历史与短期目标；每步最多两次调用、一次只读查询或动作修正。',
+    ai: { id: 'high', temperature: 0.55, stateDetail: 'compact', historyLimit: 6, maxCalls: 2, maxTools: 1, maxTurnCalls: 6, timeoutMultiplier: 1.25, agentLoop: true },
+    decide: args => decideWithModel('high', args),
   },
   'very-high': {
     label: '极高',
-    description: '大模型决策并提供更完整的地图、路线和对手信息。',
-    ai: { temperature: 0.3, stateDetail: 'rich' },
-    decide: ({ state, config, fallback, onFallback }) => aiBotAction(state, config, fallback, onFallback, BOT_PROFILES['very-high'].ai),
+    description: '详细局面与跨回合计划；每步最多三次调用、一次只读查询。',
+    ai: { id: 'very-high', temperature: 0.3, stateDetail: 'rich', historyLimit: 10, maxCalls: 3, maxTools: 1, maxTurnCalls: 8, timeoutMultiplier: 1.5, agentLoop: true },
+    decide: args => decideWithModel('very-high', args),
   },
   highest: {
     label: '最高',
-    description: '最多两次只读工具查询、五次模型调用；会复核动作并给出公开策略摘要。',
-    ai: { temperature: 0.15, stateDetail: 'rich', agentLoop: true },
-    decide: ({ state, config, fallback, onFallback, onDecision }) => aiBotAction(state, config, fallback, onFallback, BOT_PROFILES.highest.ai, onDecision),
+    description: '跨回合计划与公开历史；每步最多五次调用、两次只读查询和复核。',
+    ai: { id: 'highest', temperature: 0.15, stateDetail: 'rich', historyLimit: 12, maxCalls: 5, maxTools: 2, maxTurnCalls: 12, timeoutMultiplier: 2, agentLoop: true },
+    decide: args => decideWithModel('highest', args),
   },
 });
 
