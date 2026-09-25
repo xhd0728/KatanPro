@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, generateMap, legalSetup, legalBuild, playerAct, serialize, portRatesFor, RES, BANK_SIZE } from '../game/engine.js';
-import { normalizeAIAction, isUsefulAIAction, ruleBotAction } from '../bot.js';
+import { normalizeAIAction, isUsefulAIAction, ruleBotAction, usefulBankTrade } from '../bot.js';
 import { getBotProfile, listBotProfiles } from '../bots/profiles.js';
 
 function game(n = 3) {
@@ -336,6 +336,29 @@ test('规则 Bot 建路优先选择高产出或可扩张的道路', () => {
   assert.equal(first.type, 'buildRoad');
   assert.deepEqual(first, second);
   assert.ok(state.legal.road.includes(first.edge));
+});
+
+test('规则 Bot 银行交易优先完成城市，并尊重专属港口比例', () => {
+  const state = { rolled: true, bank: Object.fromEntries(RES.map(r => [r, 10])) };
+  const me = {
+    res: { wood: 4, brick: 0, sheep: 0, wheat: 2, ore: 2 },
+    ports: { wood: 4, brick: 4, sheep: 4, wheat: 4, ore: 4 },
+  };
+  assert.deepEqual(usefulBankTrade(state, me), { type: 'bankTrade', give: 'wood', want: 'ore' });
+
+  me.ports.wood = 2;
+  me.res.wood = 2;
+  assert.deepEqual(usefulBankTrade(state, me), { type: 'bankTrade', give: 'wood', want: 'ore' });
+});
+
+test('规则 Bot 银行交易在目标资源耗尽时保持谨慎', () => {
+  const state = { rolled: true, bank: Object.fromEntries(RES.map(r => [r, 10])) };
+  state.bank.ore = 0;
+  const me = {
+    res: { wood: 4, brick: 1, sheep: 1, wheat: 1, ore: 2 },
+    ports: Object.fromEntries(RES.map(r => [r, 4])),
+  };
+  assert.equal(usefulBankTrade(state, me), null);
 });
 
 test('免费道路无法继续连接时立即结束筑路，UI 不会卡在剩余一次', () => {

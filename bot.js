@@ -5,10 +5,10 @@ export const canAffordBundle = (res, bundle) => !!res && !!bundle && RES.every(r
 const bundleTotal = bundle => RES.reduce((n, r) => n + (bundle?.[r] || 0), 0);
 const weight = (n) => 6 - Math.abs(7 - n);
 const COSTS = [
-  { wood: 1, brick: 1, sheep: 1, wheat: 1 },
-  { wheat: 2, ore: 3 },
-  { wood: 1, brick: 1 },
-  { sheep: 1, wheat: 1, ore: 1 }
+  { priority: 40, cost: { wheat: 2, ore: 3 } },
+  { priority: 30, cost: { wood: 1, brick: 1, sheep: 1, wheat: 1 } },
+  { priority: 20, cost: { sheep: 1, wheat: 1, ore: 1 } },
+  { priority: 10, cost: { wood: 1, brick: 1 } }
 ];
 const MAX_AI_RESPONSE_BYTES = 128 * 1024;
 function bestVertex(state, ids) {
@@ -46,17 +46,25 @@ function bestRoad(state, ids) {
     return score(eb) - score(ea) || String(a).localeCompare(String(b));
   })[0];
 }
-function usefulBankTrade(state, me) {
+export function usefulBankTrade(state, me) {
   if (!state.rolled) return null;
-  for (const cost of COSTS) {
-    const missing = RES.filter(r => (me.res[r] || 0) < (cost[r] || 0));
-    if (missing.length !== 1) continue;
-    const want = missing[0];
-    if (state.bank?.[want] < 1) continue;
-    const give = RES.find(r => r !== want && me.res[r] - (cost[r] || 0) >= (me.ports?.[r] || 4));
-    if (give) return { type: 'bankTrade', give, want };
+  const candidates = [];
+  for (const { priority, cost } of COSTS) {
+    for (const want of RES) {
+      if ((state.bank?.[want] || 0) < 1 || (me.res[want] || 0) >= (cost[want] || 0)) continue;
+      for (const give of RES) {
+        const rate = me.ports?.[give] || 4;
+        if (give === want || (me.res[give] || 0) < rate) continue;
+        const after = { ...me.res, [give]: me.res[give] - rate, [want]: me.res[want] + 1 };
+        if (!canAffordBundle(after, cost)) continue;
+        const spare = RES.reduce((sum, resource) => sum + Math.max(0, after[resource] - (cost[resource] || 0)), 0);
+        const preserve = (state.bank?.[give] || 0) < 4 ? -2 : 0;
+        candidates.push({ action: { type: 'bankTrade', give, want }, score: priority * 100 + spare + preserve });
+      }
+    }
   }
-  return null;
+  candidates.sort((a, b) => b.score - a.score || `${a.action.give}:${a.action.want}`.localeCompare(`${b.action.give}:${b.action.want}`));
+  return candidates[0]?.action || null;
 }
 
 function discardAction(state, me) {
