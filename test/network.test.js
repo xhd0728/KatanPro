@@ -108,15 +108,15 @@ test('联机与纯 AI 对局：模型回退、观战权限及房主恢复', { ti
     assert.match((await intruder.next('error')).msg,/密码/);
 
     const catalog=await fetch(`http://127.0.0.1:${port}/api/bot-profiles`).then(r=>r.json());
-    assert.equal(catalog.defaultDifficulty,'llm');
-    assert.deepEqual(catalog.profiles.map(p=>p.id),['llm','rule']);
+    assert.equal(catalog.defaultDifficulty,'medium');
+    assert.deepEqual(catalog.profiles.map(p=>p.id),['low','medium','high','very-high','highest']);
     assert.equal(JSON.stringify(catalog).includes('dummy'),false);
     const aiCreator=await new Client(`ws://127.0.0.1:${port}/ws?mode=ai-only`).open();clients.push(aiCreator);
     const aiCode=(await aiCreator.next('created')).code;aiCreator.close();
     const observer=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&name=Director`).open();clients.push(observer);
     const observerToken=(await observer.next('me')).token;
     const aiRoom=(await observer.next('joined')).room;
-    assert.equal(aiRoom.isHost,true);assert.equal(aiRoom.players.length,0);assert.equal(aiRoom.settings.botDifficulty,'llm');
+    assert.equal(aiRoom.isHost,true);assert.equal(aiRoom.players.length,0);assert.equal(aiRoom.settings.botDifficulty,'medium');
     const guest=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&name=Guest`).open();clients.push(guest);
     assert.equal((await guest.next('joined')).room.isHost,false);
     guest.send({type:'settings',settings:{botCount:8}});assert.match((await guest.next('error')).msg,/房主/);

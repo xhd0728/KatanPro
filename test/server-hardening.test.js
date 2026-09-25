@@ -189,3 +189,22 @@ test('畸形消息字段被拒绝，不会抛错或留下半加入的机器人',
     srv.stop();
   }
 });
+
+test('WebSocket 消息速率受限，避免单连接耗尽服务端 CPU', { timeout: 10000 }, async () => {
+  const srv = await startServer();
+  const clients = [];
+  try {
+    const code = await createRoom(srv);
+    const host = connect(`${srv.ws}?room=${code}&name=Host`); clients.push(host);
+    await host.next('joined');
+    for (let i = 0; i < 125; i++) host.send({ type: 'unknown' });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('rate-limited socket did not close')), 2000);
+      host.ws.once('close', (codeValue) => { clearTimeout(timer); assert.equal(codeValue, 1008); resolve(); });
+    });
+    assert.equal(srv.stderr().includes('UNCAUGHT'), false);
+  } finally {
+    clients.forEach(c => c.close());
+    srv.stop();
+  }
+});

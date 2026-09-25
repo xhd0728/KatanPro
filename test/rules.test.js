@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, generateMap, legalSetup, legalBuild, playerAct, serialize, portRatesFor, RES, BANK_SIZE } from '../game/engine.js';
 import { normalizeAIAction, isUsefulAIAction, ruleBotAction } from '../bot.js';
+import { getBotProfile, listBotProfiles } from '../bots/profiles.js';
 
 function game(n = 3) {
   return createGame({ mapSize: 'small', targetVP: 15, startBonus: 'none', playerNames: Array.from({ length: n }, (_, i) => `P${i}`) });
@@ -186,6 +187,33 @@ test('AI 动作解析与阶段校验', () => {
   assert.equal(ruleBotAction(state).type, 'placeSettlement');
 });
 
+test('五档 AI 难度使用不同的模型调用策略', async () => {
+  const g = game(2);
+  const state = serialize(g, g.players[0].id);
+  const fallback = { type: 'placeSettlement', vertex: state.legal.setup[0] };
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    return { ok: true, async json() { return { choices: [{ message: { content: JSON.stringify(fallback) } }] }; } };
+  };
+  try {
+    assert.deepEqual(listBotProfiles().map(p => p.id), ['low', 'medium', 'high', 'very-high', 'highest']);
+    assert.equal(await getBotProfile('low').decide({ state, fallback }), fallback);
+    assert.equal(requests.length, 0);
+    for (const id of ['medium', 'high', 'very-high']) {
+      assert.deepEqual(await getBotProfile(id).decide({ state, config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' }, fallback }), fallback);
+      assert.equal(requests.length, id === 'medium' ? 1 : id === 'high' ? 2 : 3);
+    }
+    assert.deepEqual(await getBotProfile('highest').decide({ state, config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' }, fallback }), fallback);
+    assert.equal(requests.length, 5);
+    assert.deepEqual(requests.map(r => r.temperature), [0.85, 0.55, 0.3, 0.15, 0.15]);
+    assert.ok(requests[2].messages[0].content.length > requests[0].messages[0].content.length);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('玩家交易支持多种资源和指定接收者', () => {
   const g = game(3); setup(g); g.rolled = true;
   const [a, b, c] = g.players;
@@ -272,6 +300,16 @@ test('掷骰前打筑路工，机器人先完成免费道路再掷骰', () => {
     assert.equal(playerAct(g,g.players[0].id,action),null);
   }
   assert.equal(g.roadBuildLeft,0);assert.equal(ruleBotAction(serialize(g,g.players[0].id)).type,'roll');
+});
+
+test('规则 Bot 建路优先选择高产出或可扩张的道路', () => {
+  const g = game(2); setup(g); const p = g.players[0];
+  g.rolled = true; p.res.wood = 3; p.res.brick = 3;
+  const state = serialize(g, p.id);
+  const first = ruleBotAction(state), second = ruleBotAction(state);
+  assert.equal(first.type, 'buildRoad');
+  assert.deepEqual(first, second);
+  assert.ok(state.legal.road.includes(first.edge));
 });
 
 test('免费道路无法继续连接时立即结束筑路，UI 不会卡在剩余一次', () => {

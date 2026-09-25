@@ -215,7 +215,7 @@ function showRoom(r) {
   // Preserve the local choices when those fields are absent from their room messages.
   if (typeof r.settings.withBots === 'boolean') soloMode.checked = r.settings.withBots;
   if (Number.isInteger(r.settings.botCount)) botCount.value = String(r.settings.botCount);
-  if (r.settings.botDifficulty) botDifficulty.value = r.settings.botDifficulty;
+  if (r.settings.botDifficulty) botDifficulty.value = ({ llm: 'medium', rule: 'low' }[r.settings.botDifficulty] || r.settings.botDifficulty);
   syncBotOptions();
 }
 const settingKeys = {setMap:'mapSize',setVP:'targetVP',setBonus:'startBonus',setPassword:'password'};
@@ -226,8 +226,11 @@ const soloMode = $('#soloMode');
 const botCount = $('#botCount');
 const botDifficulty = $('#botDifficulty');
 let botProfiles = [
-  {id:'llm',description:'由服务端配置的大模型决策，超时或无效动作时自动回退。'},
-  {id:'rule',description:'使用本地规则策略，无需外部模型，行动更快。'},
+  {id:'low',description:'纯本地规则策略，不调用外部模型，速度最快。'},
+  {id:'medium',description:'轻量大模型辅助，优先遵循规则建议，失败时自动回退。'},
+  {id:'high',description:'标准大模型决策，使用当前局面的关键候选与资源信息。'},
+  {id:'very-high',description:'大模型决策并提供更完整的地图、路线和对手信息。'},
+  {id:'highest',description:'完整信息决策后再进行一次模型复核，成本和响应时间最高。'},
 ];
 const botCatalogReady = fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
   const selected = currentRoom?.settings.botDifficulty || botDifficulty.value || catalog.defaultDifficulty;
@@ -245,7 +248,7 @@ function syncBotOptions() {
   const spaces = aiOnly ? 8 : Math.max(0, 8 - (currentRoom?.players.length || 1));
   [...botCount.options].forEach(o => { o.disabled = +o.value > spaces || (aiOnly && +o.value < 2); o.hidden = o.disabled; });
   if (!botCount.value) botCount.value = String(aiOnly ? 4 : 2);
-  if (!botDifficulty.value) botDifficulty.value = 'llm';
+  if (!botDifficulty.value) botDifficulty.value = 'medium';
   if (+botCount.value > spaces) botCount.value = String(Math.max(aiOnly ? 2 : 1, spaces));
   soloMode.disabled = aiOnly || !isHost;
   soloMode.title = aiOnly ? 'AI 观战模式下所有席位都由机器人参与' : !isHost ? '只有房主可以设置 AI' : '';
@@ -259,7 +262,7 @@ botDifficulty.addEventListener('change', () => { syncBotOptions(); send({type:'s
 syncBotOptions();
 $('#startBtn').onclick = () => {
   const available = Math.max(0, 8 - (currentRoom?.players.length || 1));
-  const bots = soloMode.checked ? Array.from({ length: Math.min(available, +botCount.value || 1) }, () => ({ difficulty: botDifficulty.value, type: botDifficulty.value === 'rule' ? 'rule' : 'ai' })) : [];
+  const bots = soloMode.checked ? Array.from({ length: Math.min(available, +botCount.value || 1) }, () => ({ difficulty: botDifficulty.value, type: botDifficulty.value === 'low' ? 'rule' : 'ai' })) : [];
   send({ type: 'start', bots });
 };
 $('#copyLink').onclick = () => copyLink();

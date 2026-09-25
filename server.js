@@ -24,6 +24,8 @@ const UNCLAIMED_ROOM_MS = Number.isFinite(configuredUnclaimedMs) && configuredUn
   ? Math.floor(configuredUnclaimedMs) : 60000;
 const configuredMaxRooms = Number(process.env.CATAN_MAX_ROOMS || 500);
 const MAX_ROOMS = Number.isInteger(configuredMaxRooms) && configuredMaxRooms > 0 ? configuredMaxRooms : 500;
+const WS_MESSAGE_WINDOW_MS = 1000;
+const WS_MESSAGE_LIMIT = 120;
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('PORT 必须是 1–65535 的整数');
 const AI_CONFIG = { ...DEFAULT_AI_CONFIG };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
@@ -117,17 +119,44 @@ function scheduleEmptyRoomCleanup(room, delay = 10 * 60 * 1000) {
   if ([...room.players, ...room.spectators].some(p => p.ws)) return;
   room.emptyTimer = setTimeout(() => {
     if ([...room.players, ...room.spectators].some(p => p.ws)) return;
-    clearTimeout(room.botTimer); clearTimeout(room.offerTimer);
+    clearRoomTimers(room);
     room.game = null;
     rooms.delete(room.code);
   }, delay);
   room.emptyTimer.unref();
 }
 
+function clearRoomTimers(room) {
+  clearTimeout(room.emptyTimer);
+  clearTimeout(room.botTimer);
+  clearTimeout(room.offerTimer);
+  for (const player of [...room.players, ...room.spectators]) {
+    clearTimeout(player.disconnectTimer);
+    clearTimeout(player.takeoverTimer);
+  }
+  room.emptyTimer = null;
+  room.botTimer = null;
+  room.offerTimer = null;
+  room.timedOffer = null;
+}
+
+function withinMessageRate(ws) {
+  const now = Date.now();
+  if (!ws.messageWindowStart || now - ws.messageWindowStart >= WS_MESSAGE_WINDOW_MS) {
+    ws.messageWindowStart = now;
+    ws.messageCount = 0;
+  }
+  ws.messageCount = (ws.messageCount || 0) + 1;
+  return ws.messageCount <= WS_MESSAGE_LIMIT;
+}
+
 wss.on('connection', (ws, req) => {
   ws.isAlive = true;
+  ws.messageWindowStart = 0;
+  ws.messageCount = 0;
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (raw) => {
+    if (!withinMessageRate(ws)) return ws.close(1008, 'message rate exceeded');
     try { handleMsg(ws, raw); } catch (e) { console.error('MSG ERROR:', e.stack); error(ws, '服务器内部错误'); }
   });
   const url = new URL(req.url, 'http://x');

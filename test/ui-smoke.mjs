@@ -45,7 +45,7 @@ try{
   await run("window._modernRoom=JSON.stringify(currentRoom);window._originalSend=send;window._legacyRoom={...currentRoom,settings:{mapSize:'small',targetVP:10,startBonus:'none'}};send=()=>{showRoom(_legacyRoom);return true};showRoom(_legacyRoom)");
   await tapElement('#soloMode');
   assert.equal(await run("$('#soloMode').checked"),true,'legacy room echo preserves robot checkbox');
-  assert.equal(await run("$('#botCount').value"),'2');assert.equal(await run("$('#botDifficulty').value"),'llm');
+  assert.equal(await run("$('#botCount').value"),'2');assert.equal(await run("$('#botDifficulty').value"),'medium');
   assert.equal(await run("$('#botDifficulty').disabled"),false,'legacy robot controls remain usable');
   await tapElement('#soloMode');assert.equal(await run("$('#soloMode').checked"),false);
   await run('send=_originalSend;showRoom(JSON.parse(_modernRoom))');
@@ -208,7 +208,7 @@ try{
   await until("location.search==='?ui-smoke=ai-only' && document.readyState==='complete' && typeof $==='function' && !!document.querySelector('[name=createMode]')");
   await run("document.querySelector('[name=createMode][value=\"ai-only\"]').checked=true;$('#createBtn').click()");
   await until("typeof currentRoom!=='undefined'&&currentRoom?.mode==='ai-only'");
-  assert.equal(await run("$('#botDifficulty').value"),'llm','large model is the default');
+  assert.equal(await run("$('#botDifficulty').value"),'medium','medium is the default');
   assert.equal(await run('currentRoom.players.length'),0,'host does not occupy a player seat');
   await run("$('#botCount').value='2';$('#botCount').dispatchEvent(new Event('change'))");await until('currentRoom.settings.botCount===2');
   await viewport(390,844,true);await screenshot('ai-room-mobile');await viewport(1440,960);await screenshot('ai-room-desktop');
