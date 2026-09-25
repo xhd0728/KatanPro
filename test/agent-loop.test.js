@@ -26,6 +26,7 @@ test('只读工具返回合法候选和资源缺口，不读取或修改对手�
   const builds = runAgentTool(state, 'inspectBuilds', { kind: 'road', limit: 3 });
   assert.equal(builds.ok, true);
   assert.ok(builds.candidates.length > 0 && builds.candidates.every(c => state.legal.road.includes(c.id)));
+  assert.ok(builds.candidates.every(c => 'target' in c && 'remainingRoads' in c && 'claimsLongest' in c));
   const resources = runAgentTool(state, 'inspectResources', { goal: 'city' });
   assert.equal(resources.ok, true);
   assert.equal(resources.missing.ore, 1);

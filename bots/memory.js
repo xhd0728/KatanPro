@@ -1,9 +1,10 @@
 import { RES } from '../game/engine.js';
+import { roadIntent } from './road-planner.js';
 
 const GOALS = new Set(['road', 'settlement', 'city', 'development', 'longestRoad', 'army', 'trade']);
 
 export function freshBotMemory(state) {
-  return { gameId: state.id, playerId: state.players[state.viewer]?.id, plan: null };
+  return { gameId: state.id, playerId: state.players[state.viewer]?.id, plan: null, roadIntent: null };
 }
 
 function validTarget(state, goal, target) {
@@ -38,7 +39,19 @@ export function botMemoryContext(state, memory, eventLimit = 6) {
   const current = reconcileBotMemory(memory, state);
   const limit = Math.max(0, Math.min(16, Number.isInteger(eventLimit) ? eventLimit : 6));
   const recentEvents = (state.history || []).filter(e => e.type !== 'endTurn').slice(-limit);
-  return { turn: state.turn, self: state.viewer, recentEvents, plan: current.plan };
+  const seq = state.history?.at(-1)?.seq || 0;
+  const intent = current.roadIntent?.atSeq === seq ? current.roadIntent : null;
+  return { turn: state.turn, self: state.viewer, recentEvents, plan: current.plan,
+    roadIntent: intent ? { target: intent.target, nextEdge: intent.nextEdge,
+      remainingRoads: intent.remainingRoads, claimsLongest: intent.claimsLongest } : null };
+}
+
+// Called after an executed action in a deferred server task. A stale result is
+// filtered by event sequence at read time and by a revision check in the server.
+export function reflectBotMemory(memory, state) {
+  const current = reconcileBotMemory(memory, state);
+  const intent = roadIntent(state);
+  return { ...current, roadIntent: intent ? { ...intent, atSeq: state.history?.at(-1)?.seq || 0 } : null };
 }
 
 export function rememberBotDecision(memory, before, after, decision) {

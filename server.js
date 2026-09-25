@@ -14,7 +14,7 @@ import { nextBot } from './game/bot-scheduling.js';
 import { DEFAULT_BOT_DIFFICULTY, getBotProfile, listBotProfiles } from './bots/profiles.js';
 import { formatBotCommentary } from './bots/narration.js';
 import { AGENT_TOOLS } from './bots/agent-tools.js';
-import { reconcileBotMemory, rememberBotDecision } from './bots/memory.js';
+import { reconcileBotMemory, rememberBotDecision, reflectBotMemory } from './bots/memory.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -291,9 +291,17 @@ async function runBot(room, bot) {
     } else {
       const after = serialize(game, playerId);
       bot.memory = decision ? rememberBotDecision(bot.memory, state, after, decision) : reconcileBotMemory(bot.memory, after);
+      if (profile.ai && game.winner == null) {
+        const revision = bot.memoryRevision = (bot.memoryRevision || 0) + 1;
+        setImmediate(() => {
+          if (room.game !== game || bot.memoryRevision !== revision || (bot.controlEpoch || 0) !== controlEpoch) return;
+          try { bot.memory = reflectBotMemory(bot.memory, after); }
+          catch (error) { console.error('BOT MEMORY ERROR:', error); }
+        });
+      }
       if (decision && profile.ai?.agentLoop) {
         if (bot.thoughtTurn !== game.turn) { bot.thoughtTurn = game.turn; bot.thoughtCount = 0; }
-        const thought = formatBotCommentary(decision);
+        const thought = formatBotCommentary({ ...decision, state });
         if (thought && bot.thoughtCount < 2) {
           addLog(game, game.players.find(p => p.id === playerId), thought, 'bot-thought',
             { tools: decision.tools.filter(tool => Object.hasOwn(AGENT_TOOLS, tool)).slice(0, 2) });

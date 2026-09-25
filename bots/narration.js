@@ -1,3 +1,6 @@
+import { RES_CN } from '../game/engine.js';
+import { rankRoadChoices } from './road-planner.js';
+
 const ACTION = Object.freeze({
   placeSettlement: '安下定居点', placeRoad: '铺设开局道路', buildRoad: '继续修路',
   buildSettlement: '建造定居点', buildCity: '升级城市', buyDev: '购买发展卡',
@@ -41,7 +44,7 @@ export function normalizeBotCommentary(value) {
   return avoid || reason ? { avoid, reason } : null;
 }
 
-export function formatBotCommentary({ action, commentary, tools = [] }) {
+export function formatBotCommentary({ action, commentary, tools = [], state }) {
   const choice = ACTION[action?.type];
   if (!choice) return null;
   const note = normalizeBotCommentary(commentary);
@@ -49,8 +52,18 @@ export function formatBotCommentary({ action, commentary, tools = [] }) {
   const looked = inspected.length ? `看过${inspected.join('和')}后，` : '';
   const avoided = note?.avoid && AVOID[note.avoid] !== choice ? `觉得${AVOID[note.avoid]}先等等：` : '';
   const reason = note?.reason ? REASON[note.reason] : '';
-  if (avoided && reason) return `${looked}${avoided}${reason}，于是选择${choice}。`;
-  if (avoided) return `${looked}${avoided}这步选择${choice}。`;
-  if (reason) return `${looked}盘算着${reason}，选择${choice}。`;
-  return `${looked}选择${choice}，${OUTCOME[action.type]}。`;
+  let summary;
+  if (avoided && reason) summary = `${looked}${avoided}${reason}，于是选择${choice}。`;
+  else if (avoided) summary = `${looked}${avoided}这步选择${choice}。`;
+  else if (reason) summary = `${looked}盘算着${reason}，选择${choice}。`;
+  else summary = `${looked}选择${choice}，${OUTCOME[action.type]}。`;
+  if (!state || !['placeRoad', 'buildRoad'].includes(action.type)) return summary;
+  const route = rankRoadChoices(state, [action.edge])[0];
+  if (route?.claimsLongest) return `${summary}这段路可争取最长路奖励。`;
+  if (!route?.target) return summary;
+  const vertex = state.map.vertices.find(v => v.id === route.target);
+  const bestTile = vertex?.hexes.map(id => state.map.hexes.find(h => h.id === id))
+    .filter(h => h?.number).sort((a, b) => Math.abs(7 - a.number) - Math.abs(7 - b.number))[0];
+  const landmark = bestTile ? `${RES_CN[bestTile.resource]} ${bestTile.number} 附近` : '前方';
+  return `${summary}路线指向${landmark}的可建交点，还需 ${route.remainingRoads} 段路。`;
 }

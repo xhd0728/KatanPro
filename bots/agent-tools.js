@@ -1,4 +1,5 @@
 import { RES, COST, BANK_SIZE } from '../game/engine.js';
+import { rankRoadChoices } from './road-planner.js';
 
 const pips = number => number ? 6 - Math.abs(7 - number) : 0;
 const total = bundle => RES.reduce((sum, r) => sum + (bundle?.[r] || 0), 0);
@@ -34,22 +35,17 @@ export function runAgentTool(state, name, args = {}) {
     const kind = args.kind;
     if (!['settlement', 'city', 'road'].includes(kind)) return { ok: false, error: '建造类型无效' };
     const ids = state.phase === 'setup' && state.legal?.kind === kind ? state.legal.setup : state.legal?.[kind] || [];
+    if (kind === 'road') return { ok: true, kind, totalChoices: ids.length,
+      candidates: rankRoadChoices(state, ids).slice(0, limitOf(args.limit)) };
     const vertices = Object.fromEntries(state.map.vertices.map(v => [v.id, v]));
     const hexes = Object.fromEntries(state.map.hexes.map(h => [h.id, h]));
-    const edges = Object.fromEntries(state.map.edges.map(e => [e.id, e]));
     const vertexInfo = id => {
       const v = vertices[id];
       const tiles = (v?.hexes || []).map(hid => hexes[hid]).filter(h => h?.number);
       return { id, production: tiles.reduce((sum, h) => sum + pips(h.number), 0),
         resources: [...new Set(tiles.map(h => h.resource))], port: v?.port || null };
     };
-    const candidates = ids.map(id => {
-      if (kind !== 'road') return vertexInfo(id);
-      const edge = edges[id];
-      const a = vertexInfo(edge?.a), b = vertexInfo(edge?.b);
-      return { id, endpoints: [edge?.a, edge?.b], production: Math.max(a.production, b.production),
-        resources: [...new Set([...a.resources, ...b.resources])], port: a.port || b.port };
-    }).sort((a, b) => b.production - a.production || b.resources.length - a.resources.length || String(a.id).localeCompare(String(b.id)));
+    const candidates = ids.map(vertexInfo).sort((a, b) => b.production - a.production || b.resources.length - a.resources.length || String(a.id).localeCompare(String(b.id)));
     return { ok: true, kind, totalChoices: ids.length, candidates: candidates.slice(0, limitOf(args.limit)) };
   }
   if (name === 'inspectResources') {

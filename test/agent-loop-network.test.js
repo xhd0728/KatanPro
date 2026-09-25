@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import WebSocket from 'ws';
 
 test('最高档跨动作记忆、工具进度和结构化盘算进入真实对局，私有文字不外泄', { timeout: 15000 }, async () => {
-  let calls = 0, sawToolResult = false, sawPlan = false, sawPublicHistory = false, sawJsonMode = false;
+  let calls = 0, sawToolResult = false, sawPlan = false, sawPublicHistory = false, sawJsonMode = false, sawRoadIntent = false;
   const mock = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -18,6 +18,7 @@ test('最高档跨动作记忆、工具进度和结构化盘算进入真实对�
       const context = JSON.parse(messages[0].content.split('\n历史与计划：')[1]);
       if (context.plan?.goal === 'city') sawPlan = true;
       if (context.recentEvents.some(e => e.type === 'placeSettlement')) sawPublicHistory = true;
+      if (context.roadIntent?.nextEdge) sawRoadIntent = true;
       const match = messages[0].content.match(/建议动作：([^\n]+)\n状态：/);
       assert.ok(match);
       const fallback = JSON.parse(match[1]);
@@ -87,8 +88,8 @@ test('最高档跨动作记忆、工具进度和结构化盘算进入真实对�
     const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('thought log timeout')), 10000); });
     const { item, state } = await Promise.race([thought, timeout]);
     clearTimeout(timer);
-    assert.ok(calls >= 4 && sawToolResult && sawPlan && sawPublicHistory && sawJsonMode,
-      'the model receives tool output and its own plan plus executed public events on its next action');
+    assert.ok(calls >= 4 && sawToolResult && sawPlan && sawPublicHistory && sawJsonMode && sawRoadIntent,
+      'the model receives tool output, public history and asynchronously prepared road intent on its next action');
     assert.ok(progressEvents.some(e => e.phase === 'thinking') && progressEvents.some(e => e.phase === 'tool' && e.tool === 'inspectBuilds') && progressEvents.some(e => e.phase === 'done'));
     assert.equal(progressEvents.every(e => !JSON.stringify(e).includes('秘密手牌')), true);
     assert.match(item.text, /觉得继续修路先等等/);

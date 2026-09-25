@@ -2,6 +2,7 @@ import { RES, BANK_SIZE } from './game/engine.js';
 import { AGENT_TOOLS, runAgentTool } from './bots/agent-tools.js';
 import { normalizeBotCommentary } from './bots/narration.js';
 import { botMemoryContext, normalizeBotPlan } from './bots/memory.js';
+import { rankRoadChoices } from './bots/road-planner.js';
 
 const pick = (items) => items[Math.floor(Math.random() * items.length)];
 export const canAffordBundle = (res, bundle) => !!res && !!bundle && RES.every(r => res[r] >= (bundle[r] || 0));
@@ -26,30 +27,7 @@ function bestVertex(state, ids) {
   return [...ids].sort((a, b) => score(b) - score(a) || String(a).localeCompare(String(b)))[0];
 }
 
-function bestRoad(state, ids) {
-  const vertices = Object.fromEntries(state.map.vertices.map(v => [v.id, v]));
-  const edges = Object.fromEntries(state.map.edges.map(e => [e.id, e]));
-  const occupied = new Map();
-  for (const player of state.players) {
-    for (const id of player.settleVerts || []) occupied.set(id, player.id === state.viewer ? 'mine' : 'opponent');
-    for (const id of player.cityVerts || []) occupied.set(id, player.id === state.viewer ? 'mine' : 'opponent');
-  }
-  const settlementChoices = new Set(state.legal?.settlement || []);
-  const hexes = Object.fromEntries(state.map.hexes.map(h => [h.id, h]));
-  const vertexScore = id => {
-    const vertex = vertices[id];
-    const tiles = (vertex?.hexes || []).map(hid => hexes[hid]).filter(h => h?.number);
-    const production = tiles.reduce((sum, h) => sum + weight(h.number), 0);
-    const diversity = new Set(tiles.map(h => h.resource)).size * 1.5;
-    return production + diversity + (vertex?.port ? 2 : 0) + (settlementChoices.has(id) ? 6 : 0)
-      + (occupied.get(id) === 'mine' ? 1 : 0) - (occupied.get(id) === 'opponent' ? 6 : 0);
-  };
-  return [...ids].sort((a, b) => {
-    const ea = edges[a], eb = edges[b];
-    const score = edge => vertexScore(edge.a) + vertexScore(edge.b);
-    return score(eb) - score(ea) || String(a).localeCompare(String(b));
-  })[0];
-}
+const bestRoad = (state, ids) => rankRoadChoices(state, ids)[0];
 export function usefulBankTrade(state, me) {
   if (!state.rolled) return null;
   const candidates = [];
@@ -144,14 +122,14 @@ export function ruleBotAction(state) {
     if (state.legal?.setupPlayer !== state.viewer || !state.legal.setup?.length) return null;
     return state.legal.kind === 'settlement'
       ? { type: 'placeSettlement', vertex: bestVertex(state, state.legal.setup) }
-      : { type: 'placeRoad', edge: bestRoad(state, state.legal.setup) };
+      : { type: 'placeRoad', edge: bestRoad(state, state.legal.setup)?.id };
   }
   if (state.viewer !== state.current) return null;
   const legal = state.legal || {};
   const cards = state.cards || {};
   if (state.eventPending) return null;
   if (state.offer?.from === state.viewer) return null;
-  if (state.roadBuildLeft && legal.road?.length) return { type: 'buildRoad', edge: bestRoad(state, legal.road) };
+  if (state.roadBuildLeft && legal.road?.length) return { type: 'buildRoad', edge: bestRoad(state, legal.road)?.id };
   if (!state.rolled) return { type: 'roll' };
   if (legal.city?.length) return { type: 'buildCity', vertex: bestVertex(state, legal.city) };
   if (legal.settlement?.length) return { type: 'buildSettlement', vertex: bestVertex(state, legal.settlement) };
@@ -166,7 +144,9 @@ export function ruleBotAction(state) {
   if (!state.devPlayed && cards.knight > (cards.fresh || []).filter(t => t === 'knight').length) return { type: 'playKnight' };
   if (!state.devPlayed && cards.road > (cards.fresh || []).filter(t => t === 'road').length && legal.canPlayRoad) return { type: 'playRoad' };
   const trade = usefulBankTrade(state, me); if (trade) return trade;
-  if (legal.road?.length && me.roads < 15 && me.settlements + me.cities < 5) return { type: 'buildRoad', edge: bestRoad(state, legal.road) };
+  const route = legal.road?.length ? bestRoad(state, legal.road) : null;
+  if (route?.worthwhile && me.roads < 15)
+    return { type: 'buildRoad', edge: route.id };
   if (legal.dev) return { type: 'buyDev' };
   return { type: 'endTurn' };
 }
@@ -215,7 +195,8 @@ export function isUsefulAIAction(state, action) {
     bundleTotal(action.res) === Math.floor(me.total / 2);
   if (state.phase === 'setup') return state.legal?.setupPlayer === state.viewer &&
     (action.type === 'placeSettlement' && state.legal.kind === 'settlement' && state.legal.setup.includes(action.vertex) ||
-     action.type === 'placeRoad' && state.legal.kind === 'road' && state.legal.setup.includes(action.edge));
+     action.type === 'placeRoad' && state.legal.kind === 'road' && state.legal.setup.includes(action.edge) &&
+       sensibleRoad(state, action.edge, state.legal.setup, true));
   if (state.stealFrom?.length) return action.type === 'steal' && state.stealFrom.includes(action.from);
   if (state.needMoveRobber) return action.type === 'moveRobber' && state.viewer === state.current && state.map.hexes.some(h => h.id === action.hex && h.id !== state.map.robber);
   if (state.offer && !state.eventPending && state.offer.targets?.includes(state.viewer) && ['acceptOffer', 'rejectOffer'].includes(action.type))
@@ -223,7 +204,8 @@ export function isUsefulAIAction(state, action) {
   if (state.viewer !== state.current || state.phase !== 'play') return false;
   if (state.eventPending) return false;
   if (state.offer?.from === state.viewer) return action.type === 'cancelOffer';
-  if (state.roadBuildLeft) return action.type === 'buildRoad' && !!state.legal?.road?.includes(action.edge);
+  if (state.roadBuildLeft) return action.type === 'buildRoad' && !!state.legal?.road?.includes(action.edge) &&
+    sensibleRoad(state, action.edge, state.legal.road, true);
   const playableCard = type => !state.devPlayed && (state.cards?.[type] || 0) >
     (state.cards?.fresh || []).filter(card => card === type).length;
   if (action.type === 'roll') return !state.rolled;
@@ -233,7 +215,8 @@ export function isUsefulAIAction(state, action) {
   if (action.type === 'playYear') return playableCard('year') && RES.includes(action.r1) && RES.includes(action.r2) &&
     (state.bank?.[action.r1] || 0) >= (action.r1 === action.r2 ? 2 : 1) && (state.bank?.[action.r2] || 0) >= 1;
   if (!state.rolled) return false;
-  if (action.type === 'buildRoad') return !!state.legal?.road?.includes(action.edge);
+  if (action.type === 'buildRoad') return !!state.legal?.road?.includes(action.edge) &&
+    sensibleRoad(state, action.edge, state.legal.road);
   if (action.type === 'buildSettlement') return !!state.legal?.settlement?.includes(action.vertex);
   if (action.type === 'buildCity') return !!state.legal?.city?.includes(action.vertex);
   if (action.type === 'buyDev') return !!state.legal?.dev;
@@ -248,6 +231,15 @@ export function isUsefulAIAction(state, action) {
       targets.every(i => Number.isInteger(i) && i >= 0 && i < state.players.length && i !== state.viewer);
   }
   return action.type === 'endTurn';
+}
+
+function sensibleRoad(state, id, ids, forced = false) {
+  const ranked = rankRoadChoices(state, ids);
+  const picked = ranked.find(choice => choice.id === id);
+  if (!picked) return false;
+  if (!forced && !picked.worthwhile) return false;
+  const best = ranked[0];
+  return !best?.target || picked.claimsLongest || picked.score >= best.score * 0.45;
 }
 
 export function compactStateForAI(state, detail = 'compact') {
@@ -267,21 +259,16 @@ export function compactStateForAI(state, detail = 'compact') {
   const roadLimit = detail === 'rich' ? 24 : 10;
   const spots = settlementIds.map(describeVertex).sort((a, b) => b.score - a.score).slice(0, limit);
   const setup = kind === 'settlement' ? spots.map(v => v.id) : (state.legal?.setup || []).slice(0, setupLimit);
-  const roadIds = kind === 'road' ? setup : (state.legal?.road || []).slice(0, roadLimit);
+  const roadIds = kind === 'road' ? setup : state.legal?.road || [];
   const me = state.players[state.viewer];
-  const roads = roadIds.map(id => ({ id, a: edges[id]?.a, b: edges[id]?.b }));
-  const roadScores = roads.map(road => {
-    const endpointScore = id => {
-      const vertex = vertices[id];
-      const tiles = (vertex?.hexes || []).map(hid => hexes[hid]).filter(h => h?.number);
-      return tiles.reduce((sum, h) => sum + weight(h.number), 0) + (vertex?.port ? 2 : 0)
-        + (settlementIds.includes(id) ? 6 : 0);
-    };
-    return { id: road.id, score: endpointScore(road.a) + endpointScore(road.b) };
-  }).sort((a, b) => b.score - a.score).slice(0, detail === 'rich' ? 12 : 5);
+  const roads = () => rankRoadChoices(state, roadIds).slice(0, roadLimit)
+    .map(choice => ({ id: choice.id, a: edges[choice.id]?.a, b: edges[choice.id]?.b,
+      target: choice.target, targetScore: choice.targetScore,
+      targetTiles: choice.target ? describeVertex(choice.target).tiles : [],
+      remainingRoads: choice.remainingRoads, claimsLongest: choice.claimsLongest, worthwhile: choice.worthwhile }));
   if (me?.needDiscard) return { needDiscard: Math.floor(me.total / 2), resources: me.res };
   if (state.phase === 'setup') return { phase: 'setup', kind,
-    choices: kind === 'settlement' ? { settlement: spots } : { road: roads } };
+    choices: kind === 'settlement' ? { settlement: spots } : { road: roads() } };
   if (state.needMoveRobber) return { robberNow: state.map.robber,
     choices: { robber: state.map.hexes.filter(h => h.id !== state.map.robber).map(h => {
       const nearby = state.map.vertices.filter(v => v.hexes?.includes(h.id));
@@ -309,7 +296,7 @@ export function compactStateForAI(state, detail = 'compact') {
       roadCount: me?.roadEdges?.length || 0,
       strongestOpponent: Math.max(0, ...state.players.filter((_, i) => i !== state.viewer).map(p => p.vp || 0)),
     },
-    choices: { settlement: spots, city: (state.legal?.city || []).map(describeVertex).slice(0, detail === 'rich' ? 16 : 8), road: roads, roadScores }
+    choices: { settlement: spots, city: (state.legal?.city || []).map(describeVertex).slice(0, detail === 'rich' ? 16 : 8), road: roads() }
   };
 }
 
@@ -375,7 +362,13 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     const planInstruction = '可随动作提供简短结构化计划 plan:{"goal":"road|settlement|city|development|longestRoad|army|trade","target":"合法交点或边，可省略","resource":"wood|brick|sheep|wheat|ore，可省略"}；不要写自由文本或假设对手隐藏手牌。';
     const toolInstructions = strategy.maxTools ? `可用的只读工具：${JSON.stringify(AGENT_TOOLS)}。最多查询${strategy.maxTools}次。工具调用格式：{"tool":"inspectHistory","args":{"limit":8}}。` : '';
     const agentInstructions = strategy.agentLoop ? `\n${toolInstructions}最终动作格式：{"action":{"type":"buildCity","vertex":"v1"},"plan":{"goal":"city"},"commentary":{"avoid":"road","reason":"urgentScore"}}。commentary 只用于公共日志，不写自由文本或私有手牌；avoid 可选 road/settlement/city/development/bankTrade/playerTrade/robber/endTurn，reason 可选 scarceResources/weakProduction/urgentScore/opponentLead/blockedRoute/handRisk/betterPort/timing。${planInstruction}也可直接返回普通 JSON 动作。当前可执行动作类型：${JSON.stringify(agentActionGuide(state))}。` : `\n${planInstruction}`;
-    const prompt = `${task}${agentInstructions}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}\n历史与计划：${JSON.stringify(botMemoryContext(state, runtime.memory, strategy.historyLimit))}`;
+    const roadRelevant = !state.players[state.viewer]?.needDiscard && !state.needMoveRobber && !state.stealFrom?.length &&
+      (state.roadBuildLeft || state.legal?.road?.length || state.phase === 'setup' && state.legal?.kind === 'road');
+    const rules = roadRelevant
+      ? '规则速记：道路耗木1砖1，本身不加分，必须连接己方路网且不能穿过对手建筑；定居点耗木砖羊麦各1，须接己方道路并与任何建筑至少相隔一条边；城市耗麦2矿3。最长连续道路至少5段才得2分，分叉不相加。修路优先通向仍可建定居点的高产交点，避免死路；对手手牌种类未知。'
+      : state.phase === 'setup' ? '规则速记：初始定居点需与所有已有建筑相隔至少一条边，优先多种高产资源；第二个初始定居点会获得周边资源。'
+      : '规则速记：只选当前阶段合法动作；定居点耗木砖羊麦各1，城市耗麦2矿3；对手手牌种类未知。';
+    const prompt = `${task}${agentInstructions}\n${rules}\n建议动作：${JSON.stringify(fallback)}\n状态：${JSON.stringify(compactStateForAI(state, strategy.stateDetail || 'compact'))}\n历史与计划：${JSON.stringify(botMemoryContext(state, runtime.memory, strategy.historyLimit))}`;
     const formatKey = `${endpoint}\n${model}`;
     const request = async (messages, temperature, jsonMode = true) => fetch(endpoint, {
       method: 'POST',
@@ -484,7 +477,10 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       } else if (attempt < maxCalls - 1) {
         runtime.onProgress?.({ phase: 'repair', attempt: attempt + 1 });
         messages.push({ role: 'assistant', content: typeof content === 'string' ? content.slice(0, 512) : '{}' });
-        messages.push({ role: 'user', content: `上一个动作不符合当前阶段或资源约束。请根据已给状态修正，返回合法 JSON 动作；可使用建议动作 ${JSON.stringify(best?.action || fallback)}。` });
+        const feedback = ['placeRoad', 'buildRoad'].includes(action?.type)
+          ? '上一条道路可能是死路、绕开了更好的定居点目标，或没有推进最长路；请检查 choices.road 的目标交点与剩余路段。'
+          : '上一个动作不符合当前阶段或资源约束。';
+        messages.push({ role: 'user', content: `${feedback}请根据已给状态修正，返回合法 JSON 动作；可使用建议动作 ${JSON.stringify(best?.action || fallback)}。` });
       }
     }
     if (best) return finishBest();
