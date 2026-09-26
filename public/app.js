@@ -445,7 +445,7 @@ function renderBotProgress() {
   const player = S.players[botProgress.actor];
   const phase = BOT_PHASE_LABELS[botProgress.phase] || BOT_PHASE_LABELS.thinking;
   box.hidden = false;
-  box.innerHTML = `<div class="bot-progress-head"><span class="bot-progress-dot"></span><b>${esc(player.name)}</b><span>${phase}…</span></div>${botProgress.tools.length ? `<div class="thought-tools">${botProgress.tools.map(tool => `<span>已查 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : '<small>正在整理公开局势和自己的短期目标</small>'}`;
+  box.innerHTML = `<div class="bot-progress-head"><span class="bot-progress-dot"></span><b style="color:${player.color}">${esc(player.name)} · ${botProgress.actor + 1} 号</b><span>${phase}…</span></div>${botProgress.tools.length ? `<div class="thought-tools">${botProgress.tools.map(tool => `<span>已查 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : '<small>正在整理公开局势和自己的短期目标</small>'}`;
 }
 function renderHand() {
   const m = me();

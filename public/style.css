@@ -1215,7 +1215,6 @@ input[type=checkbox] {
 }
 #botProgress[hidden] { display:none; }
 .bot-progress-head { display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
-.bot-progress-head b { color:#355a46; }
 #botProgress small { display:block; margin:4px 0 0 13px; color:#728b76; font-size:10px; }
 .bot-progress-dot { width:7px; height:7px; flex:none; border-radius:50%; background:#51a46d; box-shadow:0 0 0 3px #51a46d25; animation:bot-pulse 1.4s ease-in-out infinite; }
 @keyframes bot-pulse { 50% { opacity:.4; transform:scale(.8); } }
