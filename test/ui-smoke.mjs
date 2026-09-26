@@ -219,7 +219,7 @@ try{
   await run(`ws.onmessage({data:JSON.stringify({type:'bot-progress',gameId:S.id,actor:1,runId:99,phase:'thinking'})});ws.onmessage({data:JSON.stringify({type:'bot-progress',gameId:S.id,actor:1,runId:99,phase:'tool',tool:'inspectBuilds'})})`);
   assert.equal(await run("!$('#botProgress').hidden && $('#botProgress').textContent.includes('已查 建造位置')"),true,'live tool status is visible');
   assert.equal(await run("$('.bot-progress-head b').textContent"),`${crowded.players[1].name} · 2 号`,'live status names the acting seat');
-  assert.equal(await run("$('#log').getBoundingClientRect().height>=100 && $('.logbox').getBoundingClientRect().height>=270"),true,'island activity has a larger dedicated area');
+  assert.equal(await run("$('#log').getBoundingClientRect().height>=100 && $('.logbox').getBoundingClientRect().height>=300"),true,'island activity has a larger dedicated area');
   await screenshot('sidebar-eight-players');
   await run(`ws.onmessage({data:JSON.stringify({type:'bot-progress',gameId:S.id,actor:1,runId:99,phase:'done'})})`);
   assert.equal(await run("$('#botProgress').hidden"),true,'live status clears after the decision');

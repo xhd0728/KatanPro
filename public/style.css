@@ -875,7 +875,7 @@ input[type=checkbox] {
   gap:8px;
   overflow:auto;
   flex:none;
-  max-height:39%;
+  max-height:28%;
 }
 
 .pcard {
@@ -1042,7 +1042,7 @@ input[type=checkbox] {
   display:grid;
   grid-template-columns:1fr 1fr;
   gap:7px;
-  margin:13px 0;
+  margin:10px 0;
   font-size:9px;
   color:#8a947d;
 }
@@ -1050,7 +1050,7 @@ input[type=checkbox] {
 .achievement {
   border:1px solid #e6e7d9;
   border-radius:9px;
-  padding:9px 7px;
+  padding:7px;
   background:#faf8ed;
 }
 
@@ -1075,7 +1075,7 @@ input[type=checkbox] {
   grid-template-columns:repeat(5,1fr);
   gap:2px;
   border-top:1px solid var(--line);
-  padding:13px 0 12px;
+  padding:10px 0 9px;
   font-size:11px;
 }
 
@@ -1084,7 +1084,7 @@ input[type=checkbox] {
   font-size:10px;
   font-weight:500;
   color:#8d9686;
-  margin-bottom:8px;
+  margin-bottom:5px;
 }
 
 .bankbar>span {
@@ -1143,7 +1143,7 @@ input[type=checkbox] {
   display:flex;
   flex:1;
   flex-direction:column;
-  min-height:clamp(270px, 34vh, 440px);
+  min-height:clamp(300px, 44vh, 520px);
   border-top:1px solid var(--line);
   padding-top:12px;
 }
@@ -1204,8 +1204,8 @@ input[type=checkbox] {
 }
 
 #botProgress {
-  margin:0 0 10px;
-  padding:10px 11px;
+  margin:0 0 8px;
+  padding:7px 10px;
   border:1px solid #b8d4c5;
   border-radius:9px;
   background:#ebf6ef;
@@ -1215,7 +1215,7 @@ input[type=checkbox] {
 }
 #botProgress[hidden] { display:none; }
 .bot-progress-head { display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
-#botProgress small { display:block; margin:4px 0 0 13px; color:#728b76; font-size:10px; }
+#botProgress small { display:block; margin:2px 0 0 12px; color:#728b76; font-size:10px; }
 .bot-progress-dot { width:7px; height:7px; flex:none; border-radius:50%; background:#51a46d; box-shadow:0 0 0 3px #51a46d25; animation:bot-pulse 1.4s ease-in-out infinite; }
 @keyframes bot-pulse { 50% { opacity:.4; transform:scale(.8); } }
 .thought-tools { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
