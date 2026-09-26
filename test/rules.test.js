@@ -354,6 +354,7 @@ test('玩家交易支持多种资源和指定接收者', () => {
 test('AI 对不划算的玩家报价明确拒绝，逐一回应后提案结束', () => {
   const g = game(3); setup(g); g.rolled = true;
   const [a, b, c] = g.players;
+  for (const player of g.players) player.res = Object.fromEntries(RES.map(resource => [resource, 0]));
   a.res.wood = 1; b.res.brick = 1; c.res.brick = 1;
   assert.equal(playerAct(g, a.id, { type: 'offerTrade', give: { wood: 1 }, want: { brick: 1 }, targets: [1, 2] }), null);
   assert.match(playerAct(g, a.id, { type: 'endTurn' }), /等待交易回复/);

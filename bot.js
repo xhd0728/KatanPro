@@ -58,28 +58,47 @@ export function usefulBankTrade(state, me) {
 
 export function usefulPlayerTrade(state, me) {
   if (!state.rolled || state.eventPending || state.offer || state.roadBuildLeft || state.players.length < 2) return null;
-  if ((state.history || []).some(event => event.turn === state.turn && event.actor === state.viewer && event.type === 'offerTrade')) return null;
+  const priorOffers = (state.history || []).filter(event => event.turn === state.turn && event.actor === state.viewer && event.type === 'offerTrade');
+  if (priorOffers.length >= 2) return null;
   const opponents = state.players.map((player, index) => index).filter(index => index !== state.viewer && state.players[index].total > 0);
   if (!opponents.length) return null;
   const candidates = [];
   for (const { priority, cost } of COSTS) {
-    for (const want of RES) {
-      if ((me.res[want] || 0) >= (cost[want] || 0)) continue;
-      for (const give of RES) {
-        if (give === want || (me.res[give] || 0) <= (cost[give] || 0)) continue;
-        const after = { ...me.res, [give]: me.res[give] - 1, [want]: me.res[want] + 1 };
-        const beforeMissing = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - (me.res[resource] || 0)), 0);
-        const afterMissing = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - after[resource]), 0);
-        if (afterMissing !== 0 || beforeMissing !== 1) continue;
-        candidates.push({
-          action: { type: 'offerTrade', give: { [give]: 1 }, want: { [want]: 1 }, targets: opponents },
-          score: priority,
-        });
-      }
+    const want = Object.fromEntries(RES.map(resource => [resource, Math.max(0, (cost[resource] || 0) - (me.res[resource] || 0))]).filter(([, count]) => count));
+    const wanted = bundleTotal(want);
+    if (!wanted) continue;
+    const surplus = Object.fromEntries(RES.map(resource => [resource, Math.max(0, (me.res[resource] || 0) - (cost[resource] || 0))]));
+    const payment = wanted + priorOffers.length;
+    if (bundleTotal(surplus) < payment) continue;
+    const give = {};
+    let remaining = payment;
+    const resources = RES.slice().sort((left, right) => surplus[right] - surplus[left]);
+    for (const resource of resources) {
+      const count = Math.min(remaining, surplus[resource]);
+      if (count) give[resource] = count;
+      remaining -= count;
     }
+    const bankCost = Object.entries(give).reduce((sum, [resource, count]) => sum + count / (me.ports?.[resource] || 4), 0);
+    if (bankCost >= wanted) continue;
+    const targets = opponents.filter(index => state.players[index].total >= wanted);
+    if (!targets.length) continue;
+    if (priorOffers.some(event => RES.every(resource => (event.data?.give?.[resource] || 0) === (give[resource] || 0) && (event.data?.want?.[resource] || 0) === (want[resource] || 0)))) continue;
+    candidates.push({ action: { type: 'offerTrade', give, want, targets }, score: priority - payment });
   }
   candidates.sort((a, b) => b.score - a.score || JSON.stringify(a.action).localeCompare(JSON.stringify(b.action)));
   return candidates[0]?.action || null;
+}
+
+function worthwhileOffer(state, me) {
+  const { give, want, from } = state.offer;
+  if (!canAffordBundle(me.res, want)) return false;
+  const after = Object.fromEntries(RES.map(resource => [resource, me.res[resource] - (want[resource] || 0) + (give[resource] || 0)]));
+  const completesGoal = COSTS.some(({ cost }) => !canAffordBundle(me.res, cost) && canAffordBundle(after, cost));
+  const losesGoal = COSTS.some(({ cost }) => canAffordBundle(me.res, cost) && !canAffordBundle(after, cost));
+  const opponent = state.players[from];
+  if ((opponent?.vp || 0) >= (state.settings?.targetVP || 10) - 1 && (opponent?.vp || 0) > me.vp) return false;
+  const bankEquivalent = RES.reduce((sum, resource) => sum + (want[resource] || 0) / (me.ports?.[resource] || 4), 0);
+  return !losesGoal && (bundleTotal(give) >= bundleTotal(want) || completesGoal && bankEquivalent < bundleTotal(give));
 }
 
 export function usefulYearAction(state, me) {
@@ -145,7 +164,7 @@ export function ruleBotAction(state) {
   if (!me) return null;
   if (me.needDiscard) return discardAction(state, me);
   if (state.offer && !state.eventPending && state.offer.targets?.includes(state.viewer))
-    return { type: canAffordBundle(me.res, state.offer.want) && bundleTotal(state.offer.give) >= bundleTotal(state.offer.want) ? 'acceptOffer' : 'rejectOffer' };
+    return { type: worthwhileOffer(state, me) ? 'acceptOffer' : 'rejectOffer' };
   if (state.stealFrom?.length) {
     const target = [...state.stealFrom].sort((a, b) => (state.players[b]?.vp || 0) - (state.players[a]?.vp || 0))[0];
     return { type: 'steal', from: target };

@@ -93,6 +93,35 @@ test('规则 AI 在银行无法补齐目标资源时主动发起玩家交易', (
   assert.equal(usefulPlayerTrade(state, state.players[state.viewer]), null);
 });
 
+test('规则交易支持组合缺口、有限让价与多换一接收', () => {
+  const game = readyGame(), player = game.players[game.current];
+  game.rolled = true;
+  player.res = { wood: 1, brick: 1, sheep: 0, wheat: 1, ore: 2 };
+  const state = serialize(game, player.id);
+  state.players[1].total = 10;
+  const me = state.players[state.viewer];
+  const first = usefulPlayerTrade(state, me);
+  assert.deepEqual(first.want, { wheat: 1, ore: 1 });
+  assert.deepEqual(first.give, { wood: 1, brick: 1 });
+  me.res = { wood: 3, brick: 0, sheep: 0, wheat: 2, ore: 2 };
+  state.history = [{ turn: state.turn, actor: state.viewer, type: 'offerTrade', data: { give: { wood: 1 }, want: { ore: 1 } } }];
+  const concession = usefulPlayerTrade(state, me);
+  assert.deepEqual(concession.give, { wood: 2 });
+  assert.deepEqual(concession.want, { ore: 1 });
+  state.history.push({ ...state.history[0], data: concession });
+  assert.equal(usefulPlayerTrade(state, me), null);
+  state.offer = { from: 1, targets: [state.viewer], give: { ore: 1 }, want: { wood: 2 } };
+  const evaluation = runAgentTool(state, 'evaluateTrade', { mode: 'offer' });
+  assert.equal(evaluation.ok, true);
+  assert.equal(evaluation.actionAvailableNow, true);
+  assert.equal(evaluation.after.wood, 1);
+  assert.equal(evaluation.after.ore, 3);
+  assert.equal(evaluation.goals.city.missingAfter, 0);
+  assert.equal(evaluation.handRisk.after, 6);
+  assert.deepEqual(ruleBotAction(state), { type: 'acceptOffer' });
+  assert.deepEqual(me.res, { wood: 3, brick: 0, sheep: 0, wheat: 2, ore: 2 });
+});
+
 test('最高档可查询两种工具，再提交和复核动作，调用数受限', async () => {
   const g = readyGame(), p = g.players[g.current];
   p.res = Object.fromEntries(RES.map(r => [r, r === 'wheat' ? 2 : r === 'ore' ? 3 : 0]));
