@@ -131,6 +131,25 @@ function broadcast(room) {
 }
 function error(ws, msg) { send(ws, { type: 'error', msg }); }
 function isHost(room, pl) { return room.hostToken === pl?.token; }
+function touchRoom(room) {
+  clearTimeout(room.idleTimer);
+  const configured = Number(process.env.CATAN_ROOM_IDLE_MS);
+  const delay = Number.isFinite(configured) && configured > 0 ? configured : 60 * 60 * 1000;
+  room.idleTimer = setTimeout(() => {
+    clearRoomTimers(room);
+    room.game = null;
+    rooms.delete(room.code);
+    for (const person of [...room.players, ...room.spectators]) {
+      if (!person.ws) continue;
+      const socket = person.ws;
+      socket.__room = null;
+      socket.__pl = null;
+      send(socket, { type: 'left', reason: '房间一小时无操作，已自动解散' });
+      socket.close(1000, 'room expired');
+    }
+  }, delay);
+  room.idleTimer.unref();
+}
 function broadcastRoom(room) {
   for (const p of [...room.players, ...room.spectators]) send(p.ws, { type: 'room', room: publicRoom(room, p) });
 }
@@ -147,6 +166,7 @@ function scheduleEmptyRoomCleanup(room, delay = 10 * 60 * 1000) {
 }
 
 function clearRoomTimers(room) {
+  clearTimeout(room.idleTimer);
   clearTimeout(room.emptyTimer);
   clearTimeout(room.botTimer);
   clearTimeout(room.offerTimer);
@@ -370,9 +390,10 @@ function joinPlayer(room, ws, name) {
   room.players.push(pl);
   if (!room.hostToken) room.hostToken = pl.token;
   ws.__pl = pl; ws.__room = room;
+  touchRoom(room);
   return pl;
 }
-function attach(ws, room, pl) { ws.__pl = pl; ws.__room = room; }
+function attach(ws, room, pl) { ws.__pl = pl; ws.__room = room; touchRoom(room); }
 function publicRoom(room, viewer) {
   return { code: room.code, mode: room.mode, settings: { ...room.settings }, locked: !!room.password,
     started: !!room.game, rosterVersion: 1, isHost: isHost(room, viewer), viewerKind: viewer?.kind,
@@ -387,7 +408,18 @@ function handleMsg(ws, raw) {
   const room = ws.__room;
   if (!room) return;
   const pl = ws.__pl;
+  if (['settings', 'addBot', 'removeBot', 'updateBot', 'setRole', 'start', 'restart', 'action', 'endGame'].includes(msg.type)) touchRoom(room);
   switch (msg.type) {
+    case 'endGame': {
+      if (!isHost(room, pl)) return error(ws, '只有房主可以结束对局');
+      if (room.mode !== 'ai-only' || !room.game) return error(ws, '仅支持结束正在进行的 AI 观战对局');
+      clearTimeout(room.botTimer); room.botTimer = null;
+      clearTimeout(room.offerTimer); room.offerTimer = null; room.timedOffer = null;
+      room.game = null;
+      for (const player of room.players) player.gamePlayerId = null;
+      broadcastRoom(room);
+      break;
+    }
     case 'settings': {
       const { mapSize, targetVP, startBonus, password, withBots, botCount, botDifficulty } = msg.settings || {};
       if (!isHost(room, pl)) return error(ws, '只有房主可以修改设置');

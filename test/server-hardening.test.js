@@ -95,6 +95,33 @@ test('未被认领的房间会被清理，房间总数有上限', { timeout: 100
   }
 });
 
+test('AI 房主可结束对局，普通观众无权限；在线闲置房间自动回收', { timeout: 10000 }, async () => {
+  const srv = await startServer({ CATAN_ROOM_IDLE_MS: '1200' });
+  const clients = [];
+  try {
+    const code = await createRoom(srv, 'ai-only');
+    const host = connect(`${srv.ws}?room=${code}&name=Host`); clients.push(host);
+    await host.next('joined');
+    const viewer = connect(`${srv.ws}?room=${code}&name=Viewer`); clients.push(viewer);
+    await viewer.next('joined');
+    host.send({ type: 'start' });
+    await host.next('state');
+    viewer.send({ type: 'endGame' });
+    assert.match((await viewer.next('error')).msg, /只有房主/);
+    host.send({ type: 'endGame' });
+    let update;
+    do { update = await host.next('room'); } while (update.room.started || !update.room.players.every(player => player.kind === 'bot'));
+    host.send({ type: 'start' });
+    await host.next('state');
+    const expired = await host.next('left');
+    assert.match(expired.reason, /自动解散/);
+    const listing = await fetch(`${srv.base}/api/rooms`).then(response => response.json());
+    assert.equal(listing.some(room => room.code === code), false);
+    const late = connect(`${srv.ws}?room=${code}`); clients.push(late);
+    assert.match((await late.next('error')).msg, /不存在/);
+  } finally { clients.forEach(client => client.close()); srv.stop(); }
+});
+
 test('静态资源请求：非法路径立即返回错误且不越出 public/', { timeout: 10000 }, async () => {
   const srv = await startServer();
   try {

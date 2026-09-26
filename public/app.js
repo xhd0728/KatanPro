@@ -146,7 +146,11 @@ function connect(code, password = '') {
         if (localStorage.getItem(tokenKey(code, !watchRoom)) === m.token) localStorage.removeItem(tokenKey(code, !watchRoom));
       }
     }
-    else if (m.type === 'joined' || m.type === 'room') { showRoom(m.room); }
+    else if (m.type === 'joined' || m.type === 'room') {
+      if (!m.room.started && S) { S = null; botProgress = null; closeModal(); }
+      $('#endGameBtn').hidden = !(m.room.started && m.room.isHost && m.room.mode === 'ai-only');
+      showRoom(m.room);
+    }
     else if (m.type === 'state') {
       if ((S && S.id !== m.state.id) || m.state.winner != null) botProgress = null;
       actionPending = false;
@@ -303,6 +307,9 @@ $('#roomPlayers').addEventListener('click', e => {
 $('#roomRoleBtn').onclick = () => send({type:'setRole',role:watchRoom ? 'player' : 'spectator'});
 syncBotOptions();
 $('#startBtn').onclick = () => send({type:'start'});
+$('#endGameBtn').onclick = () => {
+  if (confirm('结束当前 AI 对局并返回准备房间？')) send({ type: 'endGame' });
+};
 $('#copyLink').onclick = () => copyLink();
 $('#leaveRoom').onclick = () => { if (!currentRoom?.rosterVersion || !send({type:'leaveRoom'})) location.href = '/'; };
 $('#shareBtn').onclick = () => copyLink();
