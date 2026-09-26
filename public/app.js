@@ -155,7 +155,7 @@ function connect(code, password = '') {
         if (!['discard', 'steal', 'win'].includes(modalKind)) closeModal();
       }
       syncRobberMotion(S, m.state);
-      S = m.state; showGame();
+      S = m.state; clockReceivedAt = performance.now(); showGame();
       if (S.roadBuildLeft && S.viewer === S.current) pickMode = 'road';
       render();
       if (modalKind === 'trade') window.refreshTrade?.();
@@ -339,7 +339,16 @@ window.addEventListener('orientationchange', () => { needResizeFit = true; reset
 function me() { return S && S.viewer >= 0 ? S.players[S.viewer] : null; }
 
 let winDismissed = false;
+let clockReceivedAt = performance.now();
+function renderDuration() {
+  if (!S?.startedAt) return;
+  const now = S.endedAt ?? ((S.serverNow ?? S.startedAt) + performance.now() - clockReceivedAt);
+  const seconds = Math.max(0, Math.floor((now - S.startedAt) / 1000));
+  $('#gameDuration').textContent = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+setInterval(renderDuration, 1000);
 function render() {
+  renderDuration();
   S.players.forEach(p => { p.color = playerColor(p.color); });
   S.log.forEach(entry => { entry.color = playerColor(entry.color); });
   if (S.offer) S.offer.fromColor = playerColor(S.offer.fromColor);
@@ -375,15 +384,16 @@ function renderSidebar() {
   $('#bankBar').innerHTML = `<strong>银行储备 <span> / 每种共 ${BANK_SIZE} 张</span></strong>${RES.map(r => `<span title="${CN[r]}剩余 ${S.bank?.[r] ?? BANK_SIZE} 张">${resourceIcon(r)}${S.bank?.[r] ?? BANK_SIZE}</span>`).join('')}`;
   $('#deckLeft').textContent = `发展卡余 ${S.deckLeft}`;
   renderBotProgress();
-  const log = $('#log'), nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 45;
-  log.innerHTML = S.log.map(l => {
+  const log = $('#log'), nearTop = log.scrollTop < 45;
+  const oldHeight = log.scrollHeight, oldTop = log.scrollTop;
+  log.innerHTML = S.log.slice().reverse().map(l => {
     const thought = l.kind === 'bot-thought';
     const fallback = l.kind === 'bot-fallback';
     const tools = thought && Array.isArray(l.detail?.tools)
       ? l.detail.tools.filter(tool => Object.hasOwn(BOT_TOOL_LABELS, tool)).slice(0, 2) : [];
     return `<div class="logline ${thought ? 'bot-thought' : ''} ${fallback ? 'bot-fallback' : ''}">${thought ? '<span class="thought-tag">AI 决策摘要</span>' : fallback ? '<span class="thought-tag fallback-tag">规则接手</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}${l.seat ? ` · ${l.seat} 号` : ''}</b> ${esc(l.text)}${tools.length ? `<div class="thought-tools">${tools.map(tool => `<span>查验 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : ''}</div>`;
   }).join('');
-  if (nearBottom) log.scrollTop = log.scrollHeight;
+  log.scrollTop = nearTop ? 0 : oldTop + log.scrollHeight - oldHeight;
   renderStats();
 }
 function renderPlayerCards() {

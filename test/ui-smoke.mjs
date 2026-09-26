@@ -220,6 +220,8 @@ try{
   assert.equal(await run("!$('#botProgress').hidden && $('#botProgress').textContent.includes('已查 建造位置')"),true,'live tool status is visible');
   assert.equal(await run("$('.bot-progress-head b').textContent"),`${crowded.players[1].name} · 2 号`,'live status names the acting seat');
   assert.equal(await run("$('#log').getBoundingClientRect().height>=100"),true,'island activity has a dedicated scrolling area');
+  assert.equal(await run("$('#log').firstElementChild.textContent.includes(S.log.at(-1).text)"),true,'newest activity appears first');
+  assert.equal(await run("(()=>{S.startedAt=1000;S.endedAt=66000;renderDuration();return $('#gameDuration').textContent})()"),'00:01:05','finished game duration uses server timestamps');
   assert.equal(await run("[...$('#playerCards').children].every(card=>{const rect=card.getBoundingClientRect();return rect.top>=70&&rect.bottom<$('.logbox').getBoundingClientRect().top}) && $('#playerCards').scrollHeight<=$('#playerCards').clientHeight+1"),true,'all eight players are visible without roster scrolling');
   await screenshot('sidebar-eight-players');
   await run(`ws.onmessage({data:JSON.stringify({type:'bot-progress',gameId:S.id,actor:1,runId:99,phase:'done'})})`);

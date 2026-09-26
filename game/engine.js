@@ -178,7 +178,7 @@ export function createGame(settings) {
     }
   }
   const g = {
-    id: randomUUID(), settings: { mapSize, targetVP, startBonus },
+    id: randomUUID(), startedAt: Date.now(), endedAt: null, settings: { mapSize, targetVP, startBonus },
     map, players, deck: shuffle(deck), bank: Object.fromEntries(RES.map(r => [r, BANK_SIZE])),
     setupSteps, phase: 'setup', setupStep: 0, setupAnchor: {},
     current: order[0], firstPlayer: order[0], rolled: false,
@@ -722,7 +722,7 @@ function checkWin(g) {
   const p = g.players[g.current];
   const vp = vpOf(g, p, true);
   if (vp >= g.settings.targetVP) {
-    g.winner = g.current; g.phase = 'over';
+    g.winner = g.current; g.phase = 'over'; g.endedAt = Date.now();
     addLog(g, p, `达到 ${vp} 分，赢得本局！`);
   }
 }
@@ -757,6 +757,7 @@ export function serialize(g, viewerId) {
   }
   return {
     id: g.id, settings: g.settings, phase: g.phase, turn: g.turn, winner: g.winner,
+    startedAt: g.startedAt, endedAt: g.endedAt, serverNow: Date.now(),
     bank: g.bank,
     devPlayed: g.devPlayedTurn === g.turn,
     map: {

@@ -351,6 +351,18 @@ test('玩家交易支持多种资源和指定接收者', () => {
   assert.equal(g.offer, null);
 });
 
+test('中途观战共享服务端起止时间，结束时长保持固定', () => {
+  const match = game(2);
+  match.startedAt = Date.now() - 65000;
+  const player = serialize(match, match.players[0].id);
+  const spectator = serialize(match, null);
+  assert.equal(player.startedAt, spectator.startedAt);
+  assert.ok(spectator.serverNow - spectator.startedAt >= 65000);
+  match.endedAt = match.startedAt + 90000;
+  match.phase = 'over';
+  assert.equal(serialize(match, null).endedAt - spectator.startedAt, 90000);
+});
+
 test('同名 AI 的交易对象在拒绝、成交和报价视图中包含座位编号', () => {
   const match = game(2); setup(match); match.rolled = true;
   const [sender, receiver] = match.players;
