@@ -79,7 +79,7 @@ test('模型的下一次决策读到已执行动作的历史与自己的短期�
   const g = game(), p = g.players[0], state = serialize(g, p.id), fallback = ruleBotAction(state);
   const originalFetch = globalThis.fetch, prompts = [], decisions = [];
   globalThis.fetch = async (_url, options) => {
-    const prompt = JSON.parse(options.body).messages[0].content;
+    const prompt = JSON.parse(options.body).messages.find(message => message.role === 'user').content;
     prompts.push(prompt);
     const action = JSON.parse(prompt.match(/建议动作：([^\n]+)\n状态：/)[1]);
     return { ok: true, async json() { return { choices: [{ message: { content: JSON.stringify({ action,
@@ -147,7 +147,7 @@ for (const difficulty of ['medium', 'high', 'very-high', 'highest']) {
     let calls = 0, actions = 0, retainedPlans = 0;
     globalThis.fetch = async (_url, options) => {
       calls++;
-      const prompt = JSON.parse(options.body).messages[0].content;
+      const prompt = JSON.parse(options.body).messages.find(message => message.role === 'user').content;
       const action = JSON.parse(prompt.match(/建议动作：([^\n]+)\n状态：/)[1]);
       return { ok: true, async json() { return { choices: [{ message: { content: JSON.stringify({ action,
         plan: { goal: 'development', resource: 'ore' } }) } }] }; } };

@@ -15,11 +15,11 @@ test('最高档跨动作记忆、工具进度和结构化盘算进入真实对�
       const body = JSON.parse(Buffer.concat(chunks).toString());
       if (body.response_format?.type === 'json_object') sawJsonMode = true;
       const messages = body.messages;
-      const context = JSON.parse(messages[0].content.split('\n历史与计划：')[1]);
+      const context = JSON.parse(messages.find(message => message.role === 'user').content.split('\n历史与计划：')[1]);
       if (context.plan?.goal === 'city') sawPlan = true;
       if (context.recentEvents.some(e => e.type === 'placeSettlement')) sawPublicHistory = true;
       if (context.roadIntent?.nextEdge) sawRoadIntent = true;
-      const match = messages[0].content.match(/建议动作：([^\n]+)\n状态：/);
+      const match = messages.find(message => message.role === 'user').content.match(/建议动作：([^\n]+)\n状态：/);
       assert.ok(match);
       const fallback = JSON.parse(match[1]);
       if (messages.some(m => m.content.includes('totalChoices'))) sawToolResult = true;

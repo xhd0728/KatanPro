@@ -17,7 +17,7 @@ for (const mode of ['responses', 'anthropic']) {
       req.on('end', () => {
         const body = JSON.parse(Buffer.concat(chunks).toString());
         firstRequest({ path: req.url, headers: req.headers, body });
-        const prompt = mode === 'responses' ? body.input[0].content : body.messages[0].content;
+        const prompt = (mode === 'responses' ? body.input : body.messages).find(message => message.role === 'user').content;
         const fallback = JSON.parse(prompt.match(/建议动作：([^\n]+)\n状态：/)[1]);
         const content = JSON.stringify(fallback);
         const output = mode === 'responses'

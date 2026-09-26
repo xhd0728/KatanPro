@@ -152,6 +152,31 @@ test('重复工具请求不能造成无限循环，也不会公开未执行的�
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test('不同回合共用固定 system 前缀，动态状态与合法动作位于后缀', async () => {
+  const game = readyGame(), player = game.players[game.current];
+  game.rolled = true;
+  const originalFetch = globalThis.fetch, requests = [];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    return { ok: true, async json() { return { choices: [{ message: { content: '{"type":"endTurn"}' } }] }; } };
+  };
+  try {
+    for (const turn of [31, 32]) {
+      const state = serialize(game, player.id);
+      state.turn = turn;
+      await getBotProfile('high').decide({ state, fallback: { type: 'endTurn' },
+        config: { baseUrl: 'http://prefix/v1', model: 'mock', apiKey: 'x' } });
+    }
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].messages[0].role, 'system');
+    assert.deepEqual(requests[0].messages[0], requests[1].messages[0]);
+    assert.match(requests[0].messages[0].content, /多换多/);
+    assert.notEqual(requests[0].messages[1].content, requests[1].messages[1].content);
+    assert.match(requests[0].messages[1].content, /"turn":31/);
+    assert.match(requests[0].messages[1].content, /"actions":/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test('超长工具参数不会原样回灌模型上下文', async () => {
   const g = readyGame(), p = g.players[g.current];
   g.rolled = true;
@@ -168,7 +193,7 @@ test('超长工具参数不会原样回灌模型上下文', async () => {
     assert.deepEqual(await getBotProfile('highest').decide({ state, fallback,
       config: { baseUrl: 'http://mock/v1', model: 'mock', apiKey: 'x' } }), fallback);
     assert.equal(calls.length, 2, 'ordinary legal actions skip the extra review');
-    assert.ok(calls[1].messages[1].content.length < 100);
+    assert.ok(calls[1].messages.find(message => message.role === 'assistant').content.length < 100);
     assert.match(calls[1].messages.at(-1).content, /参数过长/);
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -238,7 +263,7 @@ test('最高档按真实调度完成一局并保持所有动作合法', { timeou
   let calls = 0, decisions = 0, actions = 0;
   globalThis.fetch = async (_url, options) => {
     calls++;
-    const prompt = JSON.parse(options.body).messages[0].content;
+    const prompt = JSON.parse(options.body).messages.find(message => message.role === 'user').content;
     const fallback = JSON.parse(prompt.match(/建议动作：([^\n]+)\n状态：/)[1]);
     return { ok: true, async json() { return { choices: [{ message: { content: JSON.stringify({ action: fallback,
       commentary: { avoid: 'endTurn', reason: 'timing' } }) } }] }; } };

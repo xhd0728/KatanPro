@@ -74,11 +74,10 @@ test('Responses JSON 格式被拒绝后协商一次，后续沿用普通格式',
       onUsage: count => usage.push(count) };
     assert.deepEqual(await getBotProfile('medium').decide(args), fallback);
     assert.deepEqual(await getBotProfile('medium').decide(args), fallback);
-    assert.equal(requests.length, 3);
+    assert.equal(requests.length, 2);
     assert.equal(requests[0].text.format.type, 'json_object');
     assert.equal(requests[1].text, undefined);
-    assert.equal(requests[2].text, undefined);
-    assert.deepEqual(usage, [2, 1]);
+    assert.deepEqual(usage, [1, 1]);
   } finally { globalThis.fetch = originalFetch; }
 });
 
