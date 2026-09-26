@@ -414,11 +414,12 @@ function renderPlayerCards() {
     card.style.setProperty('--player-color', p.color);
     card.innerHTML = `<div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="player-identity"><span class="nm" title="${esc(p.name)}">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span>${difficultyBadge(p)}</span>${i === active ? '<span class="turn-status"><i></i>行动中</span>' : ''}<span class="vp"><b>${p.vp}</b>分</span></div>
       <div class="pcard-metrics" aria-label="${esc(p.name)}的建筑与行动统计">
-        <div><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
-        <div><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>
-        <div title="最长连续道路"><span>${icon('road')}连路长度</span><strong>${p.roadLength ?? p.roads}</strong></div>
-        <div title="仅统计主动打出骑士卡后的成功移动；掷出 7 不计入"><span>${icon('knight')}强盗移动</span><strong>${p.robberMoves ?? 0}</strong></div>
+        <div title="定居点"><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
+        <div title="城市"><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>
+        <div title="最长连续道路"><span>${icon('road')}道路</span><strong>${p.roadLength ?? p.roads}</strong></div>
+        <div title="仅统计主动打出骑士卡后的成功移动；掷出 7 不计入"><span>${icon('knight')}骑士</span><strong>${p.robberMoves ?? 0}</strong></div>
       </div>
+      <div class="pcard-inventory"><span title="资源手牌数量">手 ${p.total}</span><span title="发展卡数量">卡 ${p.devCount}</span>${p.needDiscard ? '<span title="等待弃牌">弃</span>' : ''}</div>
       <div class="pcard-details"><span>已建道路 ${p.roads}</span><span>骑士出牌 ${p.knightsPlayed || 0}</span><span>手牌 ${p.total}</span><span>${p.needDiscard ? '待弃牌' : `发展卡 ${p.devCount}`}</span></div>
       <div class="score-track"><span style="width:${Math.min(100,p.vp/S.settings.targetVP*100)}%"></span></div>`;
     if (list.children[position] !== card) list.insertBefore(card, list.children[position] || null);

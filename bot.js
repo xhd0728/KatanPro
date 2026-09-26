@@ -39,14 +39,42 @@ export function usefulBankTrade(state, me) {
         const rate = me.ports?.[give] || 4;
         if (give === want || (me.res[give] || 0) < rate) continue;
         const after = { ...me.res, [give]: me.res[give] - rate, [want]: me.res[want] + 1 };
-        if (!canAffordBundle(after, cost)) continue;
+        const missingBefore = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - me.res[resource]), 0);
+        const missingAfter = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - after[resource]), 0);
+        if (!canAffordBundle(after, cost) && !(me.total > 7 && missingAfter < missingBefore && after[give] >= (cost[give] || 0))) continue;
         const spare = RES.reduce((sum, resource) => sum + Math.max(0, after[resource] - (cost[resource] || 0)), 0);
         const preserve = (state.bank?.[give] || 0) < 4 ? -2 : 0;
-        candidates.push({ action: { type: 'bankTrade', give, want }, score: priority * 100 + spare + preserve });
+        candidates.push({ action: { type: 'bankTrade', give, want }, score: (missingAfter === 0 ? 10000 : 0) + priority * 100 - missingAfter * 100 + spare + preserve });
       }
     }
   }
   candidates.sort((a, b) => b.score - a.score || `${a.action.give}:${a.action.want}`.localeCompare(`${b.action.give}:${b.action.want}`));
+  return candidates[0]?.action || null;
+}
+
+export function usefulPlayerTrade(state, me) {
+  if (!state.rolled || state.eventPending || state.offer || state.roadBuildLeft || state.players.length < 2) return null;
+  if ((state.history || []).some(event => event.turn === state.turn && event.actor === state.viewer && event.type === 'offerTrade')) return null;
+  const opponents = state.players.map((player, index) => index).filter(index => index !== state.viewer && state.players[index].total > 0);
+  if (!opponents.length) return null;
+  const candidates = [];
+  for (const { priority, cost } of COSTS) {
+    for (const want of RES) {
+      if ((me.res[want] || 0) >= (cost[want] || 0)) continue;
+      for (const give of RES) {
+        if (give === want || (me.res[give] || 0) <= (cost[give] || 0)) continue;
+        const after = { ...me.res, [give]: me.res[give] - 1, [want]: me.res[want] + 1 };
+        const beforeMissing = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - (me.res[resource] || 0)), 0);
+        const afterMissing = RES.reduce((sum, resource) => sum + Math.max(0, (cost[resource] || 0) - after[resource]), 0);
+        if (afterMissing !== 0 || beforeMissing !== 1) continue;
+        candidates.push({
+          action: { type: 'offerTrade', give: { [give]: 1 }, want: { [want]: 1 }, targets: opponents },
+          score: priority,
+        });
+      }
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score || JSON.stringify(a.action).localeCompare(JSON.stringify(b.action)));
   return candidates[0]?.action || null;
 }
 
@@ -149,6 +177,7 @@ export function ruleBotAction(state) {
   if (route?.worthwhile && me.roads < 15)
     return { type: 'buildRoad', edge: route.id };
   if (legal.dev) return { type: 'buyDev' };
+  const playerTrade = usefulPlayerTrade(state, me); if (playerTrade) return playerTrade;
   return { type: 'endTurn' };
 }
 

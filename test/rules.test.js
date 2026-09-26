@@ -456,6 +456,24 @@ test('规则 Bot 银行交易在目标资源耗尽时保持谨慎', () => {
   assert.equal(usefulBankTrade(state, me), null);
 });
 
+test('规则 Bot 高库存时用富余资源逐步补齐目标，低库存不盲目兑换', () => {
+  const state = { rolled: true, bank: { wood: 10, brick: 0, sheep: 10, wheat: 10, ore: 10 } };
+  const me = { res: { wood: 8, brick: 0, sheep: 0, wheat: 0, ore: 0 }, total: 8 };
+  const action = usefulBankTrade(state, me);
+  assert.equal(action.type, 'bankTrade');
+  assert.equal(action.give, 'wood');
+  assert.ok(['wheat', 'ore'].includes(action.want));
+  me.res[action.give] -= 4;
+  me.res[action.want]++;
+  me.total -= 3;
+  assert.equal(me.total, 5);
+  assert.equal(usefulBankTrade(state, me), null);
+  state.bank.wheat = state.bank.ore = state.bank.sheep = 0;
+  me.res = { wood: 8, brick: 0, sheep: 0, wheat: 0, ore: 0 };
+  me.total = 8;
+  assert.equal(usefulBankTrade(state, me), null);
+});
+
 test('规则 Bot 丰收之年优先补齐城市所需资源', () => {
   const state = { rolled: true, bank: Object.fromEntries(RES.map(r => [r, 10])) };
   const me = { res: { wood: 0, brick: 0, sheep: 0, wheat: 1, ore: 2 } };

@@ -1004,6 +1004,7 @@ input[type=checkbox] {
   font-variant-numeric:tabular-nums;
 }
 
+.pcard-inventory { display:none; }
 .pcard-details {
   display:flex;
   flex-wrap:wrap;
@@ -2744,7 +2745,7 @@ footer#actionbar {
 @media (min-width:901px) and (min-height:501px), (min-width:1001px) {
   #game {
     display:grid;
-    grid-template-columns:minmax(0,1fr) 295px;
+    grid-template-columns:minmax(0,1fr) 380px;
     grid-template-rows:70px minmax(0,1fr) 115px 84px;
   }
   .game-header { grid-area:1/1/2/3; height:70px; }
@@ -2757,7 +2758,116 @@ footer#actionbar {
   .abtn { min-width:0; flex:1; max-width:125px; padding-inline:4px; }
   .abtn.primary { min-width:0; }
   .abtn.end-btn { margin-left:0; }
-  #offerBar { left:calc((100% - 295px)/2); }
+  #offerBar { left:calc((100% - 380px)/2); }
+
+  #side {
+    overflow:hidden;
+    padding:10px;
+    width:380px;
+  }
+  .side-heading { margin-bottom:6px; }
+  #diceStats {
+    position:absolute;
+    z-index:25;
+    top:76px;
+    right:390px;
+    width:240px;
+    max-height:260px;
+    background:var(--panel);
+    box-shadow:0 5px 20px #244c3820;
+  }
+  #playerCards {
+    max-height:none;
+    overflow:visible;
+    gap:3px;
+    padding-right:3px;
+  }
+  .pcard {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) 100px 57px;
+    gap:5px;
+    padding:2px 4px;
+    border-radius:8px;
+  }
+  .pcard .top {
+    gap:6px;
+  }
+  .avatar {
+    width:24px;
+    height:24px;
+    border-radius:7px;
+    font-size:11px;
+  }
+  .pcard .nm {
+    font-size:11px;
+  }
+  .player-identity {
+    gap:3px;
+  }
+  .difficulty-badge {
+    padding:1px 4px;
+    font-size:9px;
+  }
+  .turn-status {
+    padding:2px;
+    font-size:0;
+  }
+  .pcard .vp,
+  .pcard .vp b {
+    font-size:11px;
+  }
+  .pcard .vp b {
+    font-size:16px;
+  }
+  .pcard-metrics {
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:2px;
+    margin-top:0;
+  }
+  .pcard-metrics>div {
+    min-height:20px;
+    padding:1px 2px;
+    border:0;
+    border-radius:4px;
+    background:transparent;
+  }
+  .pcard-metrics span {
+    gap:2px;
+    font-size:0;
+  }
+  .pcard-metrics .icon {
+    width:11px;
+    height:11px;
+  }
+  .pcard-metrics strong {
+    font-size:13px;
+  }
+  .pcard-details {
+    display:none;
+  }
+  .pcard-inventory {
+    display:flex;
+    align-items:center;
+    gap:4px;
+    font-size:10px;
+    white-space:nowrap;
+  }
+  .score-track {
+    display:none;
+  }
+  .badges {
+    margin:7px 0;
+  }
+  .achievement {
+    padding:6px;
+  }
+  .bankbar {
+    padding-block:8px 7px;
+  }
+  .logbox {
+    min-height:0;
+    flex:1 1 0;
+  }
 }
 
 /* Frosted docks share the island palette and keep their layout size while magnifying. */

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, playerAct, serialize, RES } from '../game/engine.js';
-import { ruleBotAction, normalizeAgentStep } from '../bot.js';
+import { ruleBotAction, normalizeAgentStep, usefulPlayerTrade } from '../bot.js';
 import { getBotProfile } from '../bots/profiles.js';
 import { runAgentTool } from '../bots/agent-tools.js';
 import { formatBotCommentary, normalizeBotCommentary } from '../bots/narration.js';
@@ -70,6 +70,29 @@ test('agent 公开短评受长度与字符约束，默认仍可回退结构化�
   assert.equal(formatBotCommentary({ action: step.action, thought: '' }), '选择结束回合，让下一位开拓者行动。');
 });
 
+test('规则 AI 在银行无法补齐目标资源时主动发起玩家交易', () => {
+  const g = readyGame(), p = g.players[g.current];
+  g.rolled = true;
+  g.bank.brick = 0;
+  p.res = { wood: 2, brick: 0, sheep: 0, wheat: 0, ore: 0 };
+  const state = serialize(g, p.id);
+  state.legal = { road: [], settlement: [], city: [], dev: false, canPlayRoad: false };
+  const trade = usefulPlayerTrade(state, state.players[state.viewer]);
+  assert.equal(trade.type, 'offerTrade');
+  assert.deepEqual(trade.give, { wood: 1 });
+  assert.deepEqual(trade.targets, [1]);
+  assert.deepEqual(trade.want, { brick: 1 });
+  assert.deepEqual(ruleBotAction(state), trade);
+  assert.equal(playerAct(g, p.id, trade), null);
+  const other = g.players[1];
+  assert.equal(playerAct(g, other.id, { type: 'rejectOffer' }), null);
+  const afterRejection = serialize(g, p.id);
+  assert.equal(usefulPlayerTrade(afterRejection, afterRejection.players[afterRejection.viewer]), null);
+  assert.notEqual(ruleBotAction(afterRejection)?.type, 'offerTrade');
+  state.players[1].total = 0;
+  assert.equal(usefulPlayerTrade(state, state.players[state.viewer]), null);
+});
+
 test('最高档可查询两种工具，再提交和复核动作，调用数受限', async () => {
   const g = readyGame(), p = g.players[g.current];
   p.res = Object.fromEntries(RES.map(r => [r, r === 'wheat' ? 2 : r === 'ore' ? 3 : 0]));
@@ -132,7 +155,7 @@ test('重复工具请求不能造成无限循环，也不会公开未执行的�
 test('超长工具参数不会原样回灌模型上下文', async () => {
   const g = readyGame(), p = g.players[g.current];
   g.rolled = true;
-  const state = serialize(g, p.id), fallback = ruleBotAction(state);
+  const state = serialize(g, p.id), fallback = { type: 'endTurn' };
   const originalFetch = globalThis.fetch, calls = [];
   globalThis.fetch = async (_url, options) => {
     calls.push(JSON.parse(options.body));
