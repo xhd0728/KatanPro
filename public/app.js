@@ -416,7 +416,7 @@ function renderPlayerCards() {
         <div><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
         <div><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>
         <div title="最长连续道路"><span>${icon('road')}连路长度</span><strong>${p.roadLength ?? p.roads}</strong></div>
-        <div title="含掷出 7 与骑士牌触发的成功移动"><span>${icon('knight')}强盗移动</span><strong>${p.robberMoves ?? 0}</strong></div>
+        <div title="主动打出骑士卡后移动强盗的次数；掷出 7 的移动不计"><span>${icon('knight')}强盗移动</span><strong>${p.robberMoves ?? 0}</strong></div>
       </div>
       <div class="pcard-details"><span>已建道路 ${p.roads}</span><span>骑士出牌 ${p.knightsPlayed || 0}</span><span>手牌 ${p.total}</span><span>${p.needDiscard ? '待弃牌' : `发展卡 ${p.devCount}`}</span></div>
       <div class="score-track"><span style="width:${Math.min(100,p.vp/S.settings.targetVP*100)}%"></span></div>`;

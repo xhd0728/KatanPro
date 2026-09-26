@@ -182,7 +182,7 @@ export function createGame(settings) {
     map, players, deck: shuffle(deck), bank: Object.fromEntries(RES.map(r => [r, BANK_SIZE])),
     setupSteps, phase: 'setup', setupStep: 0, setupAnchor: {},
     current: order[0], firstPlayer: order[0], rolled: false,
-    dice: null, tally: {}, discardQueue: [], needMoveRobber: false,
+    dice: null, tally: {}, discardQueue: [], needMoveRobber: false, robberByKnight: false,
     stealFrom: [], pendingStealer: null,
     roadBuildLeft: 0, devPlayedTurn: null, longest: { holder: null, len: 0 }, army: { holder: null, count: 0 },
     offer: null, winner: null, log: [], events: [], eventSeq: 0, pendingStealEvent: null, turn: 1,
@@ -454,7 +454,8 @@ function moveRobber(g, pi, hexId) {
   if (!h) return '地块无效';
   if (hexId === g.map.robber) return '强盗必须换一块地';
   g.map.robber = hexId;
-  p.robberMoves = (p.robberMoves || 0) + 1;
+  if (g.robberByKnight) p.robberMoves = (p.robberMoves || 0) + 1;
+  g.robberByKnight = false;
   g.needMoveRobber = false;
   addLog(g, p, `把强盗移到了 ${RES_CN[h.resource]}${h.number ? `(${h.number})` : ''} 上`);
   const victims = g.players.filter((q, qi) => qi !== pi && total(q) > 0 &&
@@ -500,6 +501,7 @@ function playKnight(g, pi) {
     addLog(g, p, `获得最大骑士团！`);
   } else if (g.army.holder === pi) g.army.count = p.knightsPlayed;
   g.needMoveRobber = true;
+  g.robberByKnight = true;
   checkWin(g);
   return null;
 }
