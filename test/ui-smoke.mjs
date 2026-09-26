@@ -42,22 +42,39 @@ try{
   await until("document.querySelector('#nameInput')");await screenshot('lobby-desktop');await viewport(390,844,true);await screenshot('lobby-mobile');await viewport(1440,960);
   await run("$('#nameInput').value='海岸旅人';$('#nameInput').dispatchEvent(new Event('input'));$('#createBtn').click()");
   await until("document.querySelector('#roomView')&&!$('#roomView').hidden");
-  // Reproduce a still-running older backend echoing room settings without AI fields.
-  await run("window._modernRoom=JSON.stringify(currentRoom);window._originalSend=send;window._legacyRoom={...currentRoom,settings:{mapSize:'small',targetVP:10,startBonus:'none'}};send=()=>{showRoom(_legacyRoom);return true};showRoom(_legacyRoom)");
-  await tapElement('#soloMode');
-  assert.equal(await run("$('#soloMode').checked"),true,'legacy room echo preserves robot checkbox');
-  assert.equal(await run("$('#botCount').value"),'2');assert.equal(await run("$('#botDifficulty').value"),'medium');
-  assert.equal(await run("$('#botDifficulty').disabled"),false,'legacy robot controls remain usable');
-  await tapElement('#soloMode');assert.equal(await run("$('#soloMode').checked"),false);
-  await run('send=_originalSend;showRoom(JSON.parse(_modernRoom))');
-  await tapElement('#soloMode');await until('currentRoom.settings.withBots===true');
-  assert.equal(await run("$('#soloMode').checked"),true,'modern room keeps checkbox after server response');
+  // A stale server must not silently pretend to accept the new roster controls.
+  await run("window._modernRoom=currentRoom;showRoom({...currentRoom,rosterVersion:undefined})");
+  assert.equal(await run("$('#addBotBtn').getAttribute('aria-disabled')"),'true');
+  await run('showRoom(_modernRoom)');
+  await tapElement('#addBotBtn');await until('currentRoom.players.length===2');
+  await run("$('#roomPlayers .seat-difficulty').value='highest';$('#roomPlayers .seat-difficulty').dispatchEvent(new Event('change',{bubbles:true}))");
+  await until("currentRoom.players[1].difficulty==='highest'");
+  await tapElement('#roomPlayers .remove-bot');await until('currentRoom.players.length===1');
+  await tapElement('#roomRoleBtn');await until("currentRoom.viewerKind==='spectator'");
+  assert.equal(await run('currentRoom.isHost'),true);
+  await call('Page.reload');await until("typeof currentRoom!=='undefined'&&currentRoom?.viewerKind==='spectator'");
+  assert.equal(await run('currentRoom.isHost'),true,'room role and host survive reload');
+  await tapElement('#roomRoleBtn');await until("currentRoom.viewerKind==='human'");
+  await run("$('#botDifficulty').value='low';$('#botDifficulty').dispatchEvent(new Event('change'))");
+  for(let i=2;i<=3;i++){await tapElement('#addBotBtn');await until(`currentRoom.players.length===${i}`);}
+  assert.equal(await run("currentRoom.players.slice(1).every(p=>p.name==='AI'&&p.difficulty==='low')"),true);
+  for(const [i,level] of ['medium','high','very-high','highest','low'].entries()) {
+    await run(`$('#botDifficulty').value='${level}';$('#addBotBtn').click()`);
+    await until(`currentRoom.players.length===${i+4}`);
+  }
+  assert.equal(await run("$('#addBotBtn').getAttribute('aria-disabled')"),'true','full roster cannot add bots');
+  await screenshot('mixed-room-eight-desktop');
+  await viewport(320,568,true);await run("$('#roomPlayers').scrollIntoView({block:'start'})");await screenshot('mixed-room-eight-mobile');
+  assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true,'eight-seat roster fits narrow phones');
+  assert.equal(await run("$('#roomPlayers').scrollHeight>$('#roomPlayers').clientHeight"),true,'long mobile roster scrolls within its own area');
+  for(let i=7;i>=3;i--){await tapElement('#roomPlayers .room-seat:last-child .remove-bot');await until(`currentRoom.players.length===${i}`);}
+  await viewport(1440,960);await run('window.scrollTo(0,0)');
   for(const size of ['epic','twin','small']) {
     await run(`$('#setMap').value='${size}';$('#setMap').dispatchEvent(new Event('change'))`);
     await until(`currentRoom.settings.mapSize==='${size}'`);
     assert.ok(await run("$('#mapDescription').textContent.length>10"));
   }
-  await run("$('#soloMode').checked=true;$('#soloMode').dispatchEvent(new Event('change'));$('#botCount').value='2';$('#botDifficulty').value='rule';$('#botDifficulty').dispatchEvent(new Event('change'));$('#startBtn').click()");
+  await run("$('#startBtn').click()");
   await until("typeof S !== 'undefined' && S?.phase==='setup'");
   assert.equal(await run("Number($('#playerCards').firstElementChild.dataset.playerIndex)"),await run('activePlayer()'),'setup actor is pinned first');
   const setupSnapshot=await run('JSON.stringify(S)');
@@ -84,6 +101,7 @@ try{
   const tradeRes=await run('Object.entries(me().res).find(([,n])=>n>0)?.[0]');
   if(tradeRes){await run(`act({type:'offerTrade',give:{${tradeRes}:1},want:{ore:29},targets:[1,2]})`);await until('S.log.some(l=>l.text.includes("均已拒绝"))');assert.equal(await run('S.offer'),null);}
   await run('openTrade()');await screenshot('trade-desktop');await run('closeModal()');
+  const originalCode=await run('roomCode'), originalToken=await run('myToken');
   const seat=await run('S.viewer');await call('Page.reload');await until('typeof S!=="undefined" && S?.phase==="play"');assert.equal(await run('S.viewer'),seat);assert.equal(await run('currentRoom.isHost'),true);
   await viewport(390,844,true);await screenshot('game-mobile');
   const before=await run('zoomBoard(1.4); view.scale');
@@ -234,11 +252,13 @@ try{
   await run("document.querySelector('[name=createMode][value=\"ai-only\"]').checked=true;$('#createBtn').click()");
   await until("typeof currentRoom!=='undefined'&&currentRoom?.mode==='ai-only'");
   assert.equal(await run("$('#botDifficulty').value"),'medium','medium is the default');
-  assert.equal(await run('currentRoom.players.length'),0,'host does not occupy a player seat');
-  await run("$('#botCount').value='2';$('#botCount').dispatchEvent(new Event('change'))");await until('currentRoom.settings.botCount===2');
+  assert.equal(await run('currentRoom.players.length'),4,'AI seats exist before start');
+  assert.equal(await run("currentRoom.players.every(p=>p.kind==='bot')"),true,'host does not occupy a player seat');
+  for(let i=3;i>=2;i--){await tapElement('#roomPlayers .remove-bot');await until(`currentRoom.players.length===${i}`);}
   await viewport(390,844,true);await screenshot('ai-room-mobile');await viewport(1440,960);await screenshot('ai-room-desktop');
   await run("$('#startBtn').click()");await until("typeof S!=='undefined'&&S?.phase==='play'",15000);
   assert.equal(await run('S.viewer'),-1);assert.equal(await run('S.players.every(p=>p.kind===\'bot\'&&p.res===null)'),true);
+  assert.equal(await run("document.querySelectorAll('#playerCards .difficulty-badge').length"),2);
   await screenshot('ai-spectator-desktop');
   await call('Page.reload');await until("typeof S!=='undefined'&&S?.viewer===-1");
   assert.equal(await run('currentRoom.isHost'),true,'spectator host survives reload');
@@ -246,8 +266,20 @@ try{
   assert.equal(await run("getComputedStyle($('#handTray')).display"),'none','spectators have more board space');
   await viewport(844,390,true);await screenshot('ai-spectator-landscape');
   assert.equal(await run('document.documentElement.scrollWidth<=innerWidth'),true,'spectator landscape has no overflow');
+  await call('Page.navigate',{url:origin+'/?ui-smoke=rooms'});
+  await until("location.search==='?ui-smoke=rooms' && document.readyState==='complete' && typeof $==='function' && !!$('#roomList .room-item')");
+  await viewport(1440,960);await screenshot('lobby-active-rooms');
+  assert.ok(await run("$('#roomList').textContent.includes('对局中')"),'active games remain discoverable');
+  assert.ok(await run("$('#roomList').textContent.includes('返回')"),'existing players can return from the lobby');
+  await run(`quickJoin('${originalCode}',false,true)`);
+  await until("typeof S!=='undefined'&&S?.viewer===-1");
+  assert.equal(await run(`localStorage.getItem('catan_tk_${originalCode}')`),originalToken,'watching never replaces the player resume token');
+  assert.notEqual(await run('myToken'),originalToken);
+  await call('Page.navigate',{url:origin+'/?room='+originalCode});
+  await until("typeof S!=='undefined'&&S?.viewer===0");
+  assert.equal(await run('myToken'),originalToken,'normal room link resumes the player seat');
   assert.deepEqual(errors,[],'browser runtime errors');
-  console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],featureChecks:['trade-inventory','unavailable-reasons','sidebar-eight-players','turn-card-sort-motion','dock-hover','ai-only-room','spectator-host-reload'],screenshots:output,browserErrors:errors},null,2));
+  console.log(JSON.stringify({passed:true,canvasClicks,players:3,touchChecks:['setup-confirm','pinch-with-pan','single-finger-pan','tap-after-pinch','discard-cards','trade-stepper'],viewports:['1440×960','390×844','320×844','320×568','768×844','844×390'],featureChecks:['trade-inventory','unavailable-reasons','sidebar-eight-players','turn-card-sort-motion','dock-hover','ai-only-room','mixed-room-eight','per-seat-difficulty','role-switch-reload','lobby-watch','spectator-token-isolation','spectator-host-reload'],screenshots:output,browserErrors:errors},null,2));
 } finally {
   socket?.terminate();chrome.kill();server.kill();
   await pause(200);try{fs.rmSync(profile,{recursive:true,force:true});}catch{}

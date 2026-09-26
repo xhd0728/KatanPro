@@ -51,6 +51,8 @@ let reconnectTimer = null, reconnectAttempts = 0;
 let reconnectPassword = '';
 let roomCode = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
 let currentRoom = null;
+let watchRoom = new URLSearchParams(location.search).get('watch') === '1';
+const tokenKey = (code, watching = watchRoom) => (watching ? 'catan_watch_tk_' : 'catan_tk_') + code;
 function esc(value) {
   return String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
 }
@@ -123,6 +125,7 @@ function connect(code, password = '') {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   let u = `${proto}://${location.host}/ws?name=${encodeURIComponent(name)}${code ? '&room=' + code : ''}${password ? '&password=' + encodeURIComponent(password) : ''}`;
   if (!code) u += '&mode=' + encodeURIComponent(document.querySelector('[name="createMode"]:checked').value);
+  if (code && watchRoom) u += '&spectate=1';
   if (code && myToken) u += '&token=' + encodeURIComponent(myToken);
   const socket = ws = new WebSocket(u);
   ws.onopen = () => { reconnectAttempts = 0; connectionStatus('已连接'); };
@@ -130,9 +133,18 @@ function connect(code, password = '') {
     if (ws !== socket) return;
     let m; try { m = JSON.parse(e.data); } catch { return toast('收到无效服务器消息'); }
     if (m.type === 'created') { location.href = '/?room=' + m.code; }
+    else if (m.type === 'left') {
+      retryAllowed = false;
+      localStorage.removeItem(tokenKey(roomCode));
+      location.href = '/';
+    }
     else if (m.type === 'me') {
       myToken = m.token;
-      if (code && m.token) localStorage.setItem('catan_tk_' + code, m.token);
+      watchRoom = !!m.spectator;
+      if (code && m.token) {
+        localStorage.setItem(tokenKey(code), m.token);
+        if (localStorage.getItem(tokenKey(code, !watchRoom)) === m.token) localStorage.removeItem(tokenKey(code, !watchRoom));
+      }
     }
     else if (m.type === 'joined' || m.type === 'room') { showRoom(m.room); }
     else if (m.type === 'state') {
@@ -192,16 +204,17 @@ async function loadRooms() {
   try {
     const rooms = await fetch('/api/rooms', { cache: 'no-store' }).then(r => r.json());
     $('#roomCount').textContent = `${rooms.length} 个`;
-    list.innerHTML = rooms.length ? rooms.map(r => `<div class="room-item"><div><b>${r.locked ? '🔒' : '🌐'} ${r.code}</b><span>${r.mode === 'ai-only' ? `${r.settings.botCount} 位 AI · 观战` : `${r.players}/${r.maxPlayers} 人`} · ${MAP_NAMES[r.settings.mapSize] || '小地图'}</span></div><button class="btn tiny" onclick="quickJoin('${r.code}', ${r.locked})">${r.mode === 'ai-only' ? '观战' : '加入'}</button></div>`).join('') : '<div class="empty-state">暂无公开房间，创建一个吧</div>';
+    list.innerHTML = rooms.length ? rooms.map(r => `<div class="room-item"><div><b>${r.locked ? '🔒' : '🌐'} ${esc(r.code)}</b><span>${r.players}/${r.maxPlayers} 席 · ${r.bots ?? r.settings.botCount ?? 0} 位 AI · ${r.spectators || 0} 人观战</span><span>${({waiting:'准备中',playing:'对局中',finished:'已结束'})[r.status] || '准备中'} · ${MAP_NAMES[r.settings.mapSize] || '小地图'}</span></div><div class="room-join-actions">${((r.canJoin ?? r.mode !== 'ai-only') || localStorage.getItem(tokenKey(r.code, false))) ? `<button class="btn tiny" onclick="quickJoin('${esc(r.code)}', ${!!r.locked}, false)">${localStorage.getItem(tokenKey(r.code, false)) ? '返回' : '加入'}</button>` : ''}<button class="btn tiny" onclick="quickJoin('${esc(r.code)}', ${!!r.locked}, true)">观战</button></div></div>`).join('') : '<div class="empty-state">暂无公开房间，创建一个吧</div>';
   } catch { list.innerHTML = '<div class="empty-state">大厅暂时不可用</div>'; }
 }
-window.quickJoin = (code, locked) => { $('#codeInput').value = code; if (locked) $('#passwordInput').focus(); else joinRoom(); };
+window.quickJoin = (code, locked, watching = false) => { watchRoom = watching; $('#codeInput').value = code; $('#joinBtn').textContent = watching ? '观战' : '加入'; if (locked) $('#passwordInput').focus(); else joinRoom(); };
+$('#codeInput').addEventListener('input', () => { watchRoom = false; $('#joinBtn').textContent = '加入'; });
 function joinRoom() {
   const code = $('#codeInput').value.trim().toUpperCase();
   const password = $('#passwordInput').value.trim();
   if (!/^[A-HJ-NP-Z2-9]{4}$/.test(code)) return toast('请输入有效的 4 位房间码');
   if (!name) return toast('先输入昵称');
-  roomCode = code; myToken = localStorage.getItem('catan_tk_' + code);
+  roomCode = code; myToken = localStorage.getItem(tokenKey(code));
   connect(code, password);
 }
 $('#createBtn').onclick = async () => {
@@ -216,80 +229,85 @@ loadRooms();
 function showRoom(r) {
   currentRoom = r;
   roomCode = r.code;
-  if (location.search !== '?room=' + r.code) history.replaceState(null, '', '/?room=' + r.code);
+  watchRoom = r.viewerKind === 'spectator' || r.mode === 'ai-only';
+  const query = '?room=' + r.code + (watchRoom ? '&watch=1' : '');
+  if (location.search !== query) history.replaceState(null, '', '/' + query);
   $('#lobbyMain').hidden = true;
   $('#roomView').hidden = false;
   $('#roomCode').textContent = r.code;
   const isHost = r.isHost;
   const aiOnly = r.mode === 'ai-only';
   $('#roomTitle').textContent = aiOnly ? '让 AI 开拓，你来观战' : '等待伙伴入座';
-  $('#roomRole').textContent = isHost ? (aiOnly ? '房主 · 观战' : '房主') : aiOnly ? '观战者' : '玩家';
-  $('#roomPlayers').innerHTML = aiOnly ? `<span class="chip">${r.settings.botCount} 位 AI · ${r.spectatorCount} 人观战</span>` : r.players.map(p => `<span class="chip">${esc(p.name)}${p.connected === false ? ' · 离线' : ''}</span>`).join('') || '<span class="chip">虚位以待</span>';
+  $('#roomRole').textContent = [isHost ? '房主' : '', watchRoom ? '观战' : '玩家'].filter(Boolean).join(' · ');
+  renderRoomRoster();
   $('#setMap').value = r.settings.mapSize; $('#setVP').value = r.settings.targetVP; $('#setBonus').value = r.settings.startBonus;
   $('#mapDescription').textContent = MAP_DESCRIPTIONS[r.settings.mapSize] || '';
-  ['setMap', 'setVP', 'setBonus', 'setPassword'].forEach(id => $('#' + id).disabled = !isHost);
-  setUnavailable($('#startBtn'), isHost ? '' : '只有房主可以开始游戏');
-  $('#hostTip').textContent = isHost ? (aiOnly ? '全部席位由 AI 执行，你负责设置牌桌并观战；也可邀请朋友一起观看。' : '你是房主，可以修改设置并开启游戏') : '当前房主正在准备，只有房主可以修改设置和开启游戏';
-  $('#startBtn').textContent = aiOnly ? '开始 AI 对局 →' : '启程，开始游戏 →';
-  // Old running servers serve the current assets but omit the newer AI settings.
-  // Preserve the local choices when those fields are absent from their room messages.
-  if (typeof r.settings.withBots === 'boolean') soloMode.checked = r.settings.withBots;
-  if (Number.isInteger(r.settings.botCount)) botCount.value = String(r.settings.botCount);
-  if (r.settings.botDifficulty) botDifficulty.value = ({ llm: 'medium', rule: 'low' }[r.settings.botDifficulty] || r.settings.botDifficulty);
+  ['setMap', 'setVP', 'setBonus', 'setPassword'].forEach(id => $('#' + id).disabled = !isHost || r.started);
+  const reason = !r.rosterVersion ? '请重启服务以使用逐个 AI 席位' : !isHost ? '只有房主可以开始游戏' : r.started ? '游戏已开始' : r.players.length < 2 ? '至少需要 2 个席位，可以添加 AI 或邀请朋友' : r.players.some(p => !p.connected) ? '请等待离线玩家重连，45 秒后会释放席位' : '';
+  setUnavailable($('#startBtn'), reason);
+  $('#hostTip').textContent = reason || (isHost ? '席位已就绪。你可以逐个调整 AI 难度；开局后固定阵容。' : '等待房主开始游戏');
+  $('#startBtn').textContent = watchRoom ? '开始对局，进入观战 →' : '启程，开始游戏 →';
+  $('#roomRoleBtn').hidden = aiOnly || !!r.started || !r.rosterVersion;
+  $('#roomRoleBtn').textContent = watchRoom ? '入座，参与对局 →' : '退到观众席';
+  setUnavailable($('#roomRoleBtn'), watchRoom && r.players.length >= 8 ? '席位已满，请等待空位或由房主移除 AI' : '');
   syncBotOptions();
 }
+function difficultyBadge(p) {
+  if (p.kind !== 'bot') return '';
+  const profile = botProfiles.find(b => b.id === p.difficulty);
+  return `<span class="difficulty-badge" data-difficulty="${esc(profile?.id || 'medium')}">${esc(profile?.label || '中')}</span>`;
+}
+function renderRoomRoster() {
+  const r = currentRoom;
+  if (!r) return;
+  $('#seatCount').textContent = `${r.players.length} / 8`;
+  $('#roomSpectators').textContent = `${r.spectatorCount || 0} 人观战`;
+  $('#roomPlayers').innerHTML = r.players.map((p, i) => `<div class="room-seat" data-seat-id="${esc(p.seatId)}"><span class="seat-number">${i + 1}</span><div class="seat-identity"><strong>${esc(p.name)}</strong><small>${p.seatId === r.viewerSeatId ? '你 · ' : ''}${p.isHost ? '房主' : p.kind === 'bot' ? '机器人' : '玩家'}${p.connected === false ? ' · 离线' : ''}</small></div>${p.kind === 'bot' ? r.isHost && !r.started ? `<select class="seat-difficulty" aria-label="席位 ${i+1} AI 难度">${botProfiles.map(b => `<option value="${esc(b.id)}" ${b.id === p.difficulty ? 'selected' : ''}>${esc(b.label)}</option>`).join('')}</select><button class="remove-bot" aria-label="移除席位 ${i+1} 的 AI" title="移除 AI">×</button>` : difficultyBadge(p) : '<span class="human-tag">真人</span>'}</div>`).join('') || '<div class="empty-state">席位空着，添加 AI 或邀请朋友入座</div>';
+}
+
 const settingKeys = {setMap:'mapSize',setVP:'targetVP',setBonus:'startBonus',setPassword:'password'};
 Object.entries(settingKeys).forEach(([id,key]) => $('#' + id).addEventListener('change', () => {
   send({type:'settings',settings:{[key]:id==='setVP'?+$('#'+id).value:$('#'+id).value}});
 }));
-const soloMode = $('#soloMode');
-const botCount = $('#botCount');
 const botDifficulty = $('#botDifficulty');
 let botProfiles = [
-  {id:'low',description:'纯本地规则策略，不调用外部模型，速度最快。'},
-  {id:'medium',description:'近期公开历史辅助的一次模型决策；失败时自动回退规则策略。'},
-  {id:'high',description:'近期历史与短期目标；每步最多两次调用、一次只读查询或动作修正。'},
-  {id:'very-high',description:'详细局面与跨回合计划；每步最多三次调用、一次只读查询。'},
-  {id:'highest',description:'跨回合计划与公开历史；每步最多五次调用、两次只读查询和复核。'},
+  {id:'low',label:'低',description:'纯本地规则策略，不调用外部模型，速度最快。'},
+  {id:'medium',label:'中',description:'近期公开历史辅助的一次模型决策；失败时自动回退规则策略。'},
+  {id:'high',label:'高',description:'近期历史与短期目标；每步最多两次调用、一次只读查询或动作修正。'},
+  {id:'very-high',label:'极高',description:'详细局面与跨回合计划；每步最多三次调用、一次只读查询。'},
+  {id:'highest',label:'最高',description:'跨回合计划与公开历史；每步最多五次调用、两次只读查询和复核。'},
 ];
 const botCatalogReady = fetch('/api/bot-profiles').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(catalog => {
-  const selected = currentRoom?.settings.botDifficulty || botDifficulty.value || catalog.defaultDifficulty;
+  const selected = botDifficulty.value || catalog.defaultDifficulty;
   botProfiles = catalog.profiles;
-  botDifficulty.innerHTML = botProfiles.map(p => `<option value="${esc(p.id)}">${esc(p.label)}${p.id === catalog.defaultDifficulty ? '（默认）' : ''}</option>`).join('');
+  botDifficulty.innerHTML = botProfiles.map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
   botDifficulty.value = selected;
-  syncBotOptions();
+  renderRoomRoster(); syncBotOptions();
   return true;
 }).catch(() => false);
 function syncBotOptions() {
-  const aiOnly = currentRoom?.mode === 'ai-only';
-  const isHost = currentRoom?.isHost ?? true;
-  if (aiOnly) soloMode.checked = true;
-  const enabled = soloMode.checked;
-  const spaces = aiOnly ? 8 : Math.max(0, 8 - (currentRoom?.players.length || 1));
-  [...botCount.options].forEach(o => { o.disabled = +o.value > spaces || (aiOnly && +o.value < 2); o.hidden = o.disabled; });
-  if (!botCount.value) botCount.value = String(aiOnly ? 4 : 2);
-  if (!botDifficulty.value) botDifficulty.value = 'medium';
-  if (+botCount.value > spaces) botCount.value = String(Math.max(aiOnly ? 2 : 1, spaces));
-  soloMode.disabled = aiOnly || !isHost;
-  soloMode.title = aiOnly ? 'AI 观战模式下所有席位都由机器人参与' : !isHost ? '只有房主可以设置 AI' : '';
-  const reason = !isHost ? '只有房主可以设置 AI' : !enabled ? '请先勾选“邀请机器人入座”' : !spaces ? '房间已满，没有空闲席位' : '';
-  for (const field of [botCount,botDifficulty]) { field.disabled = !!reason; field.title = reason; }
-  $('#botDescription').textContent = botProfiles.find(p => p.id === botDifficulty.value)?.description || '';
+  const reason = !currentRoom?.rosterVersion ? '请重启服务以使用逐个 AI 席位' : !currentRoom.isHost ? '只有房主可以管理 AI' : currentRoom.started ? '游戏已开始' : currentRoom.players.length >= 8 ? '8 个席位已满，可移除 AI 或退到观众席' : '';
+  botDifficulty.disabled = !!reason; botDifficulty.title = reason;
+  setUnavailable($('#addBotBtn'), reason);
+  $('#botDescription').textContent = reason || botProfiles.find(p => p.id === botDifficulty.value)?.description || '';
 }
-soloMode.addEventListener('change', () => { syncBotOptions(); send({type:'settings',settings:{withBots:soloMode.checked}}); });
-botCount.addEventListener('change', () => send({type:'settings',settings:{botCount:+botCount.value}}));
-botDifficulty.addEventListener('change', () => { syncBotOptions(); send({type:'settings',settings:{botDifficulty:botDifficulty.value}}); });
+botDifficulty.addEventListener('change', syncBotOptions);
+$('#addBotBtn').onclick = () => send({type:'addBot',difficulty:botDifficulty.value});
+$('#roomPlayers').addEventListener('change', e => {
+  if (e.target.matches('.seat-difficulty')) send({type:'updateBot',seatId:e.target.closest('[data-seat-id]').dataset.seatId,difficulty:e.target.value});
+});
+$('#roomPlayers').addEventListener('click', e => {
+  const button = e.target.closest('.remove-bot');
+  if (button) send({type:'removeBot',seatId:button.closest('[data-seat-id]').dataset.seatId});
+});
+$('#roomRoleBtn').onclick = () => send({type:'setRole',role:watchRoom ? 'player' : 'spectator'});
 syncBotOptions();
-$('#startBtn').onclick = () => {
-  const available = Math.max(0, 8 - (currentRoom?.players.length || 1));
-  const bots = soloMode.checked ? Array.from({ length: Math.min(available, +botCount.value || 1) }, () => ({ difficulty: botDifficulty.value, type: botDifficulty.value === 'low' ? 'rule' : 'ai' })) : [];
-  send({ type: 'start', bots });
-};
+$('#startBtn').onclick = () => send({type:'start'});
 $('#copyLink').onclick = () => copyLink();
-$('#leaveRoom').onclick = () => { location.href = '/'; };
+$('#leaveRoom').onclick = () => { if (!currentRoom?.rosterVersion || !send({type:'leaveRoom'})) location.href = '/'; };
 $('#shareBtn').onclick = () => copyLink();
 function copyLink() {
-  const url = location.origin + '/?room=' + roomCode;
+  const url = location.origin + '/?room=' + roomCode + (watchRoom ? '&watch=1' : '');
   if (!navigator.clipboard?.writeText) { prompt('复制链接发给朋友：', url); return; }
   navigator.clipboard.writeText(url).then(() => toast('邀请链接已复制', true), () => prompt('复制链接发给朋友：', url));
 }
@@ -347,7 +365,7 @@ function renderHeader() {
   }
   const cur = S.players[activePlayer()];
   const ph = S.phase === 'setup' ? '摆放' : S.phase === 'over' ? '已结束' : `回合 ${S.turn}`;
-  $('#turnBanner').innerHTML = `<span class="turn-pill">${ph}</span><span><b style="color:${cur.color}">${esc(cur.name)}</b>${S.phase === 'over' ? '' : ' 的回合'}</span>`;
+  $('#turnBanner').innerHTML = `<span class="turn-pill">${ph}</span><span><b style="color:${cur.color}">${esc(cur.name)}${cur.kind === 'bot' ? ` · ${S.players.indexOf(cur) + 1} 号` : ''}</b>${S.phase === 'over' ? '' : ' 的回合'}</span>`;
   $('#gameGoal').textContent = `${S.players.length} 位玩家 · 目标 ${S.settings.targetVP} 分`;
   $('#boardSubtitle').textContent = `${S.map.hexes.length} 块地形 · ${S.map.ports.length} 座港口`;
 }
@@ -362,7 +380,7 @@ function renderSidebar() {
     const thought = l.kind === 'bot-thought';
     const tools = thought && Array.isArray(l.detail?.tools)
       ? l.detail.tools.filter(tool => Object.hasOwn(BOT_TOOL_LABELS, tool)).slice(0, 2) : [];
-    return `<div class="logline ${thought ? 'bot-thought' : ''}">${thought ? '<span class="thought-tag">AI 决策摘要</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}</b> ${esc(l.text)}${tools.length ? `<div class="thought-tools">${tools.map(tool => `<span>查验 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : ''}</div>`;
+    return `<div class="logline ${thought ? 'bot-thought' : ''}">${thought ? '<span class="thought-tag">AI 决策摘要</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}${l.seat ? ` · ${l.seat} 号` : ''}</b> ${esc(l.text)}${tools.length ? `<div class="thought-tools">${tools.map(tool => `<span>查验 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : ''}</div>`;
   }).join('');
   if (nearBottom) log.scrollTop = log.scrollHeight;
   renderStats();
@@ -393,7 +411,7 @@ function renderPlayerCards() {
     card.dataset.playerIndex = i;
     card.setAttribute('aria-current', String(i === active));
     card.style.setProperty('--player-color', p.color);
-    card.innerHTML = `<div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span>${i === active ? '<span class="turn-status"><i></i>行动中</span>' : ''}<span class="vp"><b>${p.vp}</b>分</span></div>
+    card.innerHTML = `<div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="player-identity"><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span>${difficultyBadge(p)}</span>${i === active ? '<span class="turn-status"><i></i>行动中</span>' : ''}<span class="vp"><b>${p.vp}</b>分</span></div>
       <div class="pcard-metrics" aria-label="${esc(p.name)}的建筑与行动统计">
         <div><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
         <div><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>
@@ -1146,12 +1164,12 @@ cv.addEventListener('click',e=>{
 
 /* ---------- 启动 ---------- */
 if (roomCode) {
-  myToken = localStorage.getItem('catan_tk_' + roomCode);
+  myToken = localStorage.getItem(tokenKey(roomCode));
   if (name) { $('#nameInput').value = name; connect(roomCode); }
   else {
     // 需要先起昵称
     $('#joinBtn').textContent = '进入房间';
     $('#codeInput').value = roomCode;
-    $('#joinBtn').onclick = () => { if (!name) return toast('先输入昵称'); connect(roomCode); };
+    $('#joinBtn').onclick = joinRoom;
   }
 }

@@ -212,3 +212,131 @@ test('WebSocket 消息速率受限，避免单连接耗尽服务端 CPU', { time
     srv.stop();
   }
 });
+
+test('混合难度席位：容量、权限、身份切换、大厅与观战隐私', { timeout: 15000 }, async () => {
+  const srv = await startServer();
+  const clients = [];
+  const join = async (code, query = '') => {
+    const c = connect(`${srv.ws}?room=${code}&name=Visitor${query}`); clients.push(c);
+    c.identity = await c.next('me'); c.room = (await c.next('joined')).room;
+    return c;
+  };
+  const roomAfter = async (c, predicate) => {
+    for (let i = 0; i < 40; i++) { const r = (await c.next('room')).room; if (predicate(r)) return r; }
+    assert.fail('room update not found');
+  };
+  const listing = async code => (await fetch(`${srv.base}/api/rooms`).then(r => r.json())).find(r => r.code === code);
+  try {
+    const code = await createRoom(srv);
+    const host = await join(code), guest = await join(code);
+    assert.equal(host.room.players.length, 1);
+    assert.equal(host.room.rosterVersion, 1);
+    for (const type of ['addBot','updateBot','removeBot']) {
+      guest.send({type,difficulty:'high',seatId:host.room.viewerSeatId});
+      assert.match((await guest.next('error')).msg, /房主/);
+    }
+    host.send({type:'addBot',difficulty:'bogus'});
+    assert.match((await host.next('error')).msg, /难度/);
+    host.send({type:'settings',settings:{botCount:8,mapSize:'large'}});
+    assert.match((await host.next('error')).msg, /8/);
+    assert.equal((await listing(code)).settings.mapSize, 'small', 'invalid batch settings are atomic');
+    const levels = ['low','medium','high','very-high','highest','high'];
+    let roster;
+    for (let i = 0; i < levels.length; i++) {
+      host.send({type:'addBot',difficulty:levels[i]});
+      roster = await roomAfter(host, r => r.players.length === i + 3);
+    }
+    assert.deepEqual(roster.players.slice(2).map(p => p.difficulty), levels);
+    assert.ok(roster.players.slice(2).every(p => p.name === 'AI' && p.connected));
+    assert.equal(new Set(roster.players.map(p => p.seatId)).size, 8);
+    assert.ok(roster.players.every(p => !('token' in p)), 'public seat IDs are not resume credentials');
+    host.send({type:'addBot',difficulty:'low'});
+    assert.match((await host.next('error')).msg, /已满/);
+    let entry = await listing(code);
+    assert.deepEqual([entry.players,entry.humans,entry.bots,entry.canJoin,entry.status], [8,2,6,false,'waiting']);
+    const fullVisitor = await join(code);
+    assert.equal(fullVisitor.identity.spectator, true, 'full rooms admit spectators');
+    fullVisitor.send({type:'setRole',role:'player'});
+    assert.match((await fullVisitor.next('error')).msg, /已满/);
+    host.send({type:'setRole',role:'spectator'});
+    assert.equal((await host.next('me')).spectator, true);
+    roster = await roomAfter(host, r => r.viewerKind === 'spectator');
+    assert.equal(roster.isHost,true); assert.equal(roster.players.length,7);
+    fullVisitor.send({type:'setRole',role:'player'});
+    assert.equal((await fullVisitor.next('me')).spectator,false);
+    await roomAfter(host,r=>r.players.length===8);
+    const bot = roster.players.find(p=>p.kind==='bot');
+    host.send({type:'updateBot',seatId:bot.seatId,difficulty:'highest'});
+    roster = await roomAfter(host,r=>r.players.find(p=>p.seatId===bot.seatId)?.difficulty==='highest');
+    host.send({type:'removeBot',seatId:roster.players.find(p=>p.kind==='human').seatId});
+    assert.match((await host.next('error')).msg,/不存在/);
+    host.send({type:'removeBot',seatId:bot.seatId});
+    await roomAfter(host,r=>r.players.length===7);
+    const watcher = await join(code,'&spectate=1');
+    assert.equal(watcher.room.viewerKind,'spectator');
+    assert.equal(watcher.room.players.length,7,'explicit watching does not consume an available seat');
+    host.send({type:'addBot',difficulty:'low'});
+    roster = await roomAfter(host,r=>r.players.length===8);
+    host.send({type:'start'});
+    const state = (await host.next('state')).state;
+    assert.equal(state.viewer,-1);
+    assert.ok(state.players.every(p=>p.res===null));
+    assert.deepEqual(state.players.map(p=>p.difficulty), roster.players.map(p=>p.difficulty));
+    assert.ok(state.players.filter(p=>p.kind==='bot').every(p=>p.name==='AI'));
+    host.send({type:'updateBot',seatId:roster.players.find(p=>p.kind==='bot').seatId,difficulty:'low'});
+    assert.match((await host.next('error')).msg,/开始后/);
+    watcher.send({type:'action',action:{type:'roll'}});
+    assert.match((await watcher.next('error')).msg,/观战/);
+    watcher.send({type:'setRole',role:'player'});
+    assert.match((await watcher.next('error')).msg,/开始后/);
+    entry = await listing(code);
+    assert.equal(entry.status,'playing'); assert.equal(entry.canJoin,false);
+    const late = await join(code);
+    assert.equal((await late.next('state')).state.viewer,-1);
+    const restored = await join(code,`&spectate=1&token=${host.identity.token}`);
+    assert.equal(restored.room.isHost,true);
+    assert.equal((await restored.next('state')).state.viewer,-1);
+    assert.equal(srv.stderr(),'');
+  } finally { clients.forEach(c=>c.close()); srv.stop(); }
+});
+
+test('纯 AI 准备房间支持逐席编辑和最低人数校验', { timeout: 10000 }, async () => {
+  const srv = await startServer(); const clients=[];
+  try {
+    const code=await createRoom(srv,'ai-only');
+    const host=connect(`${srv.ws}?room=${code}`);clients.push(host);
+    const r=(await host.next('joined')).room;
+    assert.equal(r.players.length,4);assert.equal(r.viewerKind,'spectator');
+    assert.equal(r.isHost,true);assert.ok(r.players.every(p=>p.name==='AI'&&p.difficulty==='medium'));
+    for(const p of r.players.slice(1))host.send({type:'removeBot',seatId:p.seatId});
+    host.send({type:'start'});assert.match((await host.next('error')).msg,/至少/);
+    host.send({type:'setRole',role:'player'});assert.match((await host.next('error')).msg,/只能观战/);
+    host.send({type:'updateBot',seatId:r.players[0].seatId,difficulty:'low'});
+    host.send({type:'addBot',difficulty:'high'});host.send({type:'start'});
+    const s=(await host.next('state')).state;
+    assert.equal(s.viewer,-1);assert.deepEqual(s.players.map(p=>p.difficulty),['low','high']);
+  } finally {clients.forEach(c=>c.close());srv.stop();}
+});
+
+test('主动离开立即释放席位，房主移交给真人或观众而非 AI', {timeout:10000}, async()=>{
+  const srv=await startServer();const clients=[];
+  try{
+    const code=await createRoom(srv);
+    const host=connect(`${srv.ws}?room=${code}`);clients.push(host);await host.next('joined');
+    host.send({type:'addBot',difficulty:'low'});
+    const watcher=connect(`${srv.ws}?room=${code}&spectate=1`);clients.push(watcher);
+    await watcher.next('joined');
+    host.send({type:'leaveRoom'});await host.next('left');
+    let room;do{room=(await watcher.next('room')).room;}while(!room.isHost);
+    assert.equal(room.players.length,1);assert.equal(room.players[0].kind,'bot');
+    watcher.send({type:'addBot',difficulty:'highest'});
+    do{room=(await watcher.next('room')).room;}while(room.players.length!==2);
+    assert.deepEqual(room.players.map(p=>p.difficulty),['low','highest']);
+    watcher.send({type:'setRole',role:'player'});await watcher.next('me');
+    watcher.send({type:'start'});
+    const state=(await watcher.next('state')).state;
+    assert.equal(state.viewer,2,'promoted spectator receives a real player seat');
+    assert.notEqual(state.players[2].res,null);
+    watcher.send({type:'leaveRoom'});assert.match((await watcher.next('error')).msg,/已开始/);
+  }finally{clients.forEach(c=>c.close());srv.stop();}
+});

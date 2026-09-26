@@ -2840,3 +2840,36 @@ body:has(#game.spectating) #offerBar { bottom:84px; }
 @media (max-height:500px) and (orientation:landscape) and (max-width:1000px) {
   body:has(#game.spectating) #offerBar { left:50%; bottom:55px; max-width:calc(100vw - 24px); }
 }
+
+/* Room seats share the same numbering as the game cards. */
+.roster-heading { display:flex; justify-content:space-between; gap:12px; margin:22px 0 10px; font-size:12px; color:var(--muted); }
+.roster-heading strong { color:var(--ink); }
+#seatCount { margin-left:6px; font-weight:500; color:var(--muted); }
+.room-roster { margin-bottom:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.room-seat { display:flex; align-items:center; gap:8px; min-width:0; padding:9px; border:1px solid var(--line); border-radius:10px; background:#fafbf6; }
+.seat-number { display:grid; place-items:center; flex-shrink:0; width:26px; height:30px; border-radius:7px; background:#e4ece4; color:var(--teal); font-size:12px; font-weight:700; }
+.seat-identity { display:flex; flex:1; flex-direction:column; min-width:0; gap:3px; }
+.seat-identity strong { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.seat-identity small { font-size:10px; color:var(--muted); }
+.seat-difficulty { width:64px; min-height:36px; padding:5px; border:1px solid #b6cbbb; border-radius:8px; background:#edf5ec; color:var(--teal); font-size:12px; cursor:pointer; }
+.remove-bot { border:0; background:transparent; color:#92736c; padding:0; min-width:30px; min-height:36px; font-size:22px; cursor:pointer; border-radius:6px; }
+.remove-bot:hover { background:#f6e8e3; color:#a13b28; }
+.human-tag { font-size:10px; color:var(--muted); }
+#roomRoleBtn { margin:10px 0 20px; font-size:12px; min-height:30px; }
+.bot-add { display:flex; align-items:flex-end; gap:12px; }
+.bot-add .fld { flex:1; min-width:0; }
+.bot-add .btn { min-height:43px; }
+.room-join-actions { display:flex; gap:6px; flex-shrink:0; }
+.difficulty-badge { display:inline-flex; align-items:center; width:max-content; border:1px solid #c8d8c6; border-radius:5px; padding:2px 6px; background:#edf4e9; color:#4c6954; font-size:10px; font-weight:600; line-height:1.25; white-space:nowrap; }
+.difficulty-badge[data-difficulty="low"] { background:#f1f3ed; color:#7a846f; border-color:#dce0d5; }
+.difficulty-badge[data-difficulty="high"] { background:#e8f0f8; color:#416582; border-color:#c6d7e5; }
+.difficulty-badge[data-difficulty="very-high"] { background:#f0eaf8; color:#765691; border-color:#dbcee9; }
+.difficulty-badge[data-difficulty="highest"] { background:#fcf0dc; color:#926a25; border-color:#e9d4a8; }
+.player-identity { display:flex; flex-direction:column; align-items:flex-start; min-width:0; gap:4px; }
+@media(max-width:620px) {
+  .room-roster { grid-template-columns:1fr; max-height:290px; overflow:auto; overscroll-behavior:contain; }
+  .seat-difficulty { width:80px; min-height:40px; }
+  .remove-bot { min-width:40px; min-height:40px; }
+}
+
+.room-roster > .empty-state { grid-column:1 / -1; }

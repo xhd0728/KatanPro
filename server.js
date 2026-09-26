@@ -74,7 +74,12 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ defaultDifficulty: DEFAULT_BOT_DIFFICULTY, profiles: listBotProfiles() }));
   }
   if (p === '/api/rooms') {
-    const list = [...rooms.values()].filter(r => !r.game).map(r => ({ code: r.code, mode: r.mode, locked: !!r.password, players: r.players.length, maxPlayers: 8, settings: r.settings }));
+    const list = [...rooms.values()].map(r => ({ code: r.code, mode: r.mode, locked: !!r.password,
+      players: r.players.length, humans: r.players.filter(p => p.kind === 'human').length,
+      bots: r.players.filter(p => p.kind === 'bot').length, maxPlayers: 8,
+      spectators: r.spectators.filter(p => p.ws).length,
+      status: !r.game ? 'waiting' : r.game.winner == null ? 'playing' : 'finished',
+      canJoin: !r.game && r.mode !== 'ai-only' && r.players.length < 8, settings: r.settings }));
     res.writeHead(200, { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     return res.end(JSON.stringify(list));
   }
@@ -196,7 +201,7 @@ wss.on('connection', (ws, req) => {
     old.ws = ws;
     attach(ws, room, old);
     if (previous && previous !== ws) previous.close(4001, 'seat resumed elsewhere');
-    send(ws, { type: 'me', token: old.token });
+    send(ws, { type: 'me', token: old.token, spectator: old.kind === 'spectator' });
     send(ws, { type: 'joined', code, room: publicRoom(room, old) });
     if (room.game) { if (old.kind === 'human') addLog(room.game, old.gp(), '重新连接'); broadcast(room); }
     else broadcastRoom(room);
@@ -204,17 +209,17 @@ wss.on('connection', (ws, req) => {
   }
   const password = url.searchParams.get('password') || '';
   if (room.password && password !== room.password) { error(ws, '房间密码错误'); return ws.close(); }
-  if (room.game || room.mode === 'ai-only') {
-    const pl = { ws, name, kind: 'spectator', token: randomBytes(16).toString('base64url'), gamePlayerId: null };
+  if (room.game || room.mode === 'ai-only' || room.players.length >= 8 || url.searchParams.get('spectate') === '1') {
+    const pl = { ws, name, seatId: randomBytes(8).toString('hex'), kind: 'spectator', token: randomBytes(16).toString('base64url'), gamePlayerId: null };
     room.spectators.push(pl); attach(ws, room, pl);
     clearTimeout(room.emptyTimer);
-    if (room.mode === 'ai-only' && !room.hostToken) room.hostToken = pl.token;
+    if (!room.hostToken) room.hostToken = pl.token;
     send(ws, { type: 'me', token: pl.token, spectator: true });
     send(ws, { type: 'joined', code, room: publicRoom(room, pl) });
-    if (room.game) broadcast(room); else broadcastRoom(room);
+    broadcastRoom(room);
+    if (room.game) broadcast(room);
     return;
   }
-  if (room.players.length >= 8) { error(ws, '房间已满'); return ws.close(); }
   const pl = joinPlayer(room, ws, name);
   send(ws, { type: 'me', token: pl.token });
   send(ws, { type: 'joined', code, room: publicRoom(room, pl) });
@@ -317,10 +322,12 @@ async function runBot(room, bot) {
 }
 
 function addBotPlayer(room, spec) {
-  const difficulty = spec.difficulty || (spec.type === 'rule' ? 'rule' : DEFAULT_BOT_DIFFICULTY);
+  const profile = getBotProfile(spec.difficulty || (spec.type === 'rule' ? 'low' : DEFAULT_BOT_DIFFICULTY));
+  const difficulty = profile.ai?.id || 'low';
   const bot = {
     ws: null,
-    name: String(spec.name || `${getBotProfile(difficulty).label} ${room.players.filter(p => p.kind === 'bot').length + 1}`).slice(0, 12),
+    name: 'AI',
+    seatId: randomBytes(8).toString('hex'),
     token: randomBytes(8).toString('base64url'),
     kind: 'bot',
     difficulty,
@@ -328,7 +335,18 @@ function addBotPlayer(room, spec) {
     gp() { return room.game ? room.game.players.find((p) => p.id === bot.gamePlayerId) : null; }
   };
   room.players.push(bot);
+  syncBotRoster(room);
   return bot;
+}
+
+function syncBotRoster(room) {
+  room.settings.botCount = room.players.filter(p => p.kind === 'bot').length;
+  room.settings.withBots = room.settings.botCount > 0;
+}
+
+function transferHost(room) {
+  const people = [...room.players, ...room.spectators].filter(p => p.kind !== 'bot');
+  room.hostToken = (people.find(p => p.ws) || people[0])?.token || null;
 }
 
 function createRoom(requestedMode) {
@@ -336,13 +354,15 @@ function createRoom(requestedMode) {
   let code;
   do { code = genCode(); } while (rooms.has(code));
   const room = { code, mode, players: [], spectators: [], game: null, hostToken: null, password: '', settings: { mapSize: 'small', targetVP: 10, startBonus: 'none', withBots: mode === 'ai-only', botCount: mode === 'ai-only' ? 4 : 2, botDifficulty: DEFAULT_BOT_DIFFICULTY } };
+  if (mode === 'ai-only') for (let i = 0; i < 4; i++) addBotPlayer(room, {});
+  else syncBotRoster(room);
   rooms.set(code, room);
   // Rooms nobody joins would otherwise stay in memory and the lobby forever.
   scheduleEmptyRoomCleanup(room, UNCLAIMED_ROOM_MS);
   return code;
 }
 function joinPlayer(room, ws, name) {
-  const pl = { ws, name, token: randomBytes(8).toString('base64url'), kind: 'human', gamePlayerId: null, botTakeover: false, controlEpoch: 0, gp() { return room.game ? room.game.players.find(p => p.id === pl.gamePlayerId) : null; } };
+  const pl = { ws, name, seatId: randomBytes(8).toString('hex'), token: randomBytes(8).toString('base64url'), kind: 'human', gamePlayerId: null, botTakeover: false, controlEpoch: 0, gp() { return room.game ? room.game.players.find(p => p.id === pl.gamePlayerId) : null; } };
   clearTimeout(room.emptyTimer);
   room.players.push(pl);
   if (!room.hostToken) room.hostToken = pl.token;
@@ -351,7 +371,11 @@ function joinPlayer(room, ws, name) {
 }
 function attach(ws, room, pl) { ws.__pl = pl; ws.__room = room; }
 function publicRoom(room, viewer) {
-  return { code: room.code, mode: room.mode, settings: { ...room.settings }, locked: !!room.password, isHost: isHost(room, viewer), spectatorCount: room.spectators.filter(p => p.ws).length, players: room.players.map(p => ({ name: p.name, kind: p.kind || 'human', connected: !!p.ws || p.kind === 'bot' })) };
+  return { code: room.code, mode: room.mode, settings: { ...room.settings }, locked: !!room.password,
+    started: !!room.game, rosterVersion: 1, isHost: isHost(room, viewer), viewerKind: viewer?.kind,
+    viewerSeatId: viewer?.seatId, spectatorCount: room.spectators.filter(p => p.ws).length,
+    players: room.players.map(p => ({ seatId: p.seatId, name: p.name, kind: p.kind || 'human',
+      difficulty: p.kind === 'bot' ? p.difficulty : null, isHost: isHost(room, p), connected: !!p.ws || p.kind === 'bot' })) };
 }
 
 function handleMsg(ws, raw) {
@@ -367,14 +391,71 @@ function handleMsg(ws, raw) {
       if (room.game) return error(ws, '游戏已开始');
       if (botDifficulty !== undefined && (typeof botDifficulty !== 'string' || !getBotProfile(botDifficulty))) return error(ws, '未知的 AI 难度');
       if (password !== undefined && password !== null && typeof password !== 'string') return error(ws, '房间密码无效');
+      let count = room.settings.botCount;
+      if (Number.isInteger(botCount) && botCount >= 0 && botCount <= 8) count = botCount;
+      if (withBots === false && room.mode !== 'ai-only') count = 0;
+      if (withBots === true && !count) count = 2;
+      if (count + room.players.filter(p => p.kind === 'human').length > 8) return error(ws, '最多只能有 8 名玩家和机器人');
       if (typeof mapSize === 'string' && Object.hasOwn(MAP_LAYOUTS, mapSize)) room.settings.mapSize = mapSize;
       if ([7, 10, 12, 15].includes(targetVP)) room.settings.targetVP = targetVP;
       if (['none', 'random1', 'random2'].includes(startBonus)) room.settings.startBonus = startBonus;
       if (password !== undefined) room.password = String(password || '').trim().slice(0, 24);
-      if (typeof withBots === 'boolean' && room.mode !== 'ai-only') room.settings.withBots = withBots;
-      if (Number.isInteger(botCount) && botCount >= (room.mode === 'ai-only' ? 2 : 1) && botCount <= (room.mode === 'ai-only' ? 8 : 7)) room.settings.botCount = botCount;
-      if (botDifficulty !== undefined) room.settings.botDifficulty = botDifficulty;
+      // Keep old clients usable; new clients manage individual roster entries.
+      if (botDifficulty !== undefined) {
+        room.settings.botDifficulty = getBotProfile(botDifficulty).ai?.id || 'low';
+        for (const bot of room.players.filter(p => p.kind === 'bot')) bot.difficulty = room.settings.botDifficulty;
+      }
+
+      while (room.players.filter(p => p.kind === 'bot').length > count) {
+        room.players.splice(room.players.findLastIndex(p => p.kind === 'bot'), 1);
+      }
+      while (room.players.filter(p => p.kind === 'bot').length < count) addBotPlayer(room, { difficulty: room.settings.botDifficulty });
+      syncBotRoster(room);
       broadcastRoom(room);
+      break;
+    }
+    case 'addBot':
+    case 'updateBot':
+    case 'removeBot': {
+      if (!isHost(room, pl)) return error(ws, '只有房主可以管理 AI');
+      if (room.game) return error(ws, '对局开始后不能修改席位');
+      if (msg.type !== 'removeBot' && (typeof msg.difficulty !== 'string' || !getBotProfile(msg.difficulty))) return error(ws, '未知的 AI 难度');
+      if (msg.type === 'addBot') {
+        if (room.players.length >= 8) return error(ws, '房间已满，最多 8 个席位');
+        addBotPlayer(room, { difficulty: msg.difficulty });
+      } else {
+        const bot = room.players.find(p => p.kind === 'bot' && p.seatId === msg.seatId);
+        if (!bot) return error(ws, 'AI 席位不存在');
+        if (msg.type === 'removeBot') room.players = room.players.filter(p => p !== bot);
+        else bot.difficulty = getBotProfile(msg.difficulty).ai?.id || 'low';
+      }
+      syncBotRoster(room); broadcastRoom(room); break;
+    }
+    case 'setRole': {
+      if (room.game) return error(ws, '对局开始后不能更换身份');
+      if (!['player', 'spectator'].includes(msg.role)) return error(ws, '身份无效');
+      if (msg.role === 'player' && pl.kind === 'spectator') {
+        if (room.mode === 'ai-only') return error(ws, '纯 AI 房间只能观战');
+        if (room.players.length >= 8) return error(ws, '房间已满，请等待空闲席位');
+        room.spectators = room.spectators.filter(p => p !== pl);
+        pl.kind = 'human'; pl.gp = () => room.game?.players.find(p => p.id === pl.gamePlayerId);
+        room.players.push(pl);
+      } else if (msg.role === 'spectator' && pl.kind === 'human') {
+        room.players = room.players.filter(p => p !== pl);
+        pl.kind = 'spectator'; room.spectators.push(pl);
+      }
+      send(ws, { type: 'me', token: pl.token, spectator: pl.kind === 'spectator' });
+      broadcastRoom(room); break;
+    }
+    case 'leaveRoom': {
+      if (room.game) return error(ws, '对局已开始，席位将保留以便重连');
+      room.players = room.players.filter(p => p !== pl);
+      room.spectators = room.spectators.filter(p => p !== pl);
+      clearTimeout(pl.disconnectTimer);
+      if (room.hostToken === pl.token) transferHost(room);
+      ws.__pl = null; ws.__room = null;
+      send(ws, { type: 'left' }); ws.close();
+      broadcastRoom(room); scheduleEmptyRoomCleanup(room);
       break;
     }
     case 'rename': {
@@ -390,9 +471,7 @@ function handleMsg(ws, raw) {
       if (!isHost(room, pl)) return error(ws, '只有房主可以开始游戏');
       if (room.game) return error(ws, '游戏已开始');
       if (room.players.some(p => p.kind === 'human' && !p.ws)) return error(ws, '请等待离线玩家重连；45 秒后会自动释放席位');
-      const configuredBots = room.mode === 'ai-only' || room.settings.withBots
-        ? Array.from({ length: room.settings.botCount }, () => ({ difficulty: room.settings.botDifficulty })) : [];
-      const bots = room.mode === 'ai-only' ? configuredBots : Array.isArray(msg.bots) ? msg.bots.slice(0, 8) : configuredBots;
+      const bots = room.mode !== 'ai-only' && !room.players.some(p => p.kind === 'bot') && Array.isArray(msg.bots) ? msg.bots : [];
       // Validate every spec before adding any, so a bad entry cannot leave partial bots in the lobby.
       const validSpec = spec => spec && typeof spec === 'object'
         && ['difficulty', 'type', 'name'].every(k => spec[k] === undefined || typeof spec[k] === 'string');
@@ -402,10 +481,10 @@ function handleMsg(ws, raw) {
       if (room.players.length + bots.length > 8) return error(ws, '最多只能有 8 名玩家和机器人');
       for (const spec of bots) addBotPlayer(room, spec || {});
       const humanPlayers = room.players.filter(p => p.kind === 'human');
-      room.game = createGame({ ...room.settings, playerNames: room.players.map(p => p.name), playerKinds: room.players.map(p => p.kind) });
+      room.game = createGame({ ...room.settings, playerNames: room.players.map(p => p.name), playerKinds: room.players.map(p => p.kind), playerDifficulties: room.players.map(p => p.difficulty) });
       room.players.forEach((p, i) => p.gamePlayerId = room.game.players[i].id);
       addLog(room.game, null, `对局配置：${humanPlayers.length} 名玩家 · ${room.players.filter(p => p.kind === 'bot').length} 个机器人`);
-      broadcast(room);
+      broadcastRoom(room); broadcast(room);
       break;
     }
     case 'action': {
@@ -419,7 +498,7 @@ function handleMsg(ws, raw) {
     case 'restart': {
       if (!isHost(room, pl)) return error(ws, '只有房主可以重新开始');
       if (!room.game || room.game.winner == null) return error(ws, '本局还未结束');
-      room.game = createGame({ ...room.settings, playerNames: room.players.map(p => p.name), playerKinds: room.players.map(p => p.kind) });
+      room.game = createGame({ ...room.settings, playerNames: room.players.map(p => p.name), playerKinds: room.players.map(p => p.kind), playerDifficulties: room.players.map(p => p.difficulty) });
       room.players.forEach((p, i) => p.gamePlayerId = room.game.players[i].id);
       broadcast(room);
       break;
@@ -437,7 +516,7 @@ function onDisconnect(ws) {
     pl.disconnectTimer = setTimeout(() => {
       if (pl.ws) return;
       room.spectators = room.spectators.filter(p => p !== pl);
-      if (room.hostToken === pl.token) room.hostToken = room.spectators.find(p => p.ws)?.token || room.spectators[0]?.token || null;
+      if (room.hostToken === pl.token) transferHost(room);
       broadcastRoom(room);
       if (!room.game && !room.players.length && !room.spectators.length) rooms.delete(room.code);
     }, room.game ? 10 * 60 * 1000 : 45000);
@@ -451,9 +530,9 @@ function onDisconnect(ws) {
     pl.disconnectTimer = setTimeout(() => {
       if (pl.ws || room.game) return;
       room.players = room.players.filter(p => p !== pl);
-      if (room.hostToken === pl.token) room.hostToken = room.players[0]?.token || null;
+      if (room.hostToken === pl.token) transferHost(room);
       broadcastRoom(room);
-      if (!room.players.length) rooms.delete(room.code);
+      scheduleEmptyRoomCleanup(room);
     }, 45000);
     pl.disconnectTimer.unref();
   } else {

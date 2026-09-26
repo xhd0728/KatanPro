@@ -116,7 +116,7 @@ test('联机与纯 AI 对局：模型回退、观战权限及房主恢复', { ti
     const observer=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&name=Director`).open();clients.push(observer);
     const observerToken=(await observer.next('me')).token;
     const aiRoom=(await observer.next('joined')).room;
-    assert.equal(aiRoom.isHost,true);assert.equal(aiRoom.players.length,0);assert.equal(aiRoom.settings.botDifficulty,'medium');
+    assert.equal(aiRoom.isHost,true);assert.equal(aiRoom.players.length,4);assert.equal(aiRoom.settings.botDifficulty,'medium');
     const guest=await new Client(`ws://127.0.0.1:${port}/ws?room=${aiCode}&name=Guest`).open();clients.push(guest);
     assert.equal((await guest.next('joined')).room.isHost,false);
     guest.send({type:'settings',settings:{botCount:8}});assert.match((await guest.next('error')).msg,/房主/);

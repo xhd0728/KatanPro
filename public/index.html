@@ -30,7 +30,7 @@
       <div id="roomView" hidden>
         <span class="eyebrow">YOUR TABLE</span><h2 id="roomTitle">等待伙伴入座</h2>
         <div class="roomcode-line"><span>房间码</span><b id="roomCode"></b><span id="roomRole" class="role-badge"></span><button id="copyLink" class="btn tiny">邀请朋友</button><button id="leaveRoom" class="text-btn">离开</button></div>
-        <div id="roomPlayers" class="plist"></div>
+        <div class="roster-heading"><strong>玩家席位 <span id="seatCount"></span></strong><span id="roomSpectators"></span></div><div id="roomPlayers" class="room-roster"></div><button id="roomRoleBtn" class="text-btn" type="button"></button>
         <div class="settings">
           <label class="fld"><span>地图大小</span><select id="setMap" aria-describedby="mapDescription"><option value="small">小地图 · 19 块 · 建议 2–4 人</option><option value="medium">中地图 · 30 块 · 建议 5–6 人</option><option value="large">大地图 · 37 块 · 建议 7–8 人</option><option value="epic">超大大陆 · 61 块 · 建议 6–8 人</option><option value="twin">双岛地峡 · 73 块 · 建议 6–8 人</option></select></label>
           <label class="fld"><span>胜利目标</span><select id="setVP"><option value="7">7 分 · 轻松速局</option><option value="10" selected>10 分 · 经典对局</option><option value="12">12 分 · 进阶挑战</option><option value="15">15 分 · 长线竞争</option></select></label>
@@ -38,7 +38,7 @@
           <label class="fld"><span>房间密码</span><input id="setPassword" type="password" maxlength="24" autocomplete="off" placeholder="留空为公开牌桌"/></label>
         </div>
         <p id="mapDescription" class="tip"></p>
-        <div class="solo-settings"><label class="checkline"><input id="soloMode" type="checkbox"/> 邀请机器人入座</label><div class="settings"><label class="fld"><span>AI 数量</span><select id="botCount"><option value="1">1 位</option><option value="2" selected>2 位</option><option value="3">3 位</option><option value="4">4 位</option><option value="5">5 位</option><option value="6">6 位</option><option value="7">7 位</option><option value="8">8 位</option></select></label><label class="fld"><span>AI 难度 / 策略</span><select id="botDifficulty" aria-describedby="botDescription"><option value="low">低</option><option value="medium" selected>中（默认）</option><option value="high">高</option><option value="very-high">极高</option><option value="highest">最高</option></select></label></div><p id="botDescription" class="tip"></p></div>
+        <div class="solo-settings"><div class="bot-add"><label class="fld"><span>新 AI 的难度</span><select id="botDifficulty" aria-describedby="botDescription"><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option><option value="very-high">极高</option><option value="highest">最高</option></select></label><button id="addBotBtn" class="btn" type="button">＋ 添加 AI</button></div><p id="botDescription" class="tip"></p></div>
         <button id="startBtn" class="btn primary big">启程，开始游戏 →</button><p id="hostTip" class="tip"></p>
       </div>
     </div>

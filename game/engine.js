@@ -153,12 +153,13 @@ export const PIECES = { road: 15, settlement: 5, city: 4 };
 export const BANK_SIZE = 29;
 
 export function createGame(settings) {
-  const { mapSize, targetVP, startBonus, playerNames, playerKinds = [] } = settings;
+  const { mapSize, targetVP, startBonus, playerNames, playerKinds = [], playerDifficulties = [] } = settings;
   const map = generateMap(mapSize);
   const deck = [];
   for (const [t, d] of Object.entries(DEV_TYPES)) for (let i = 0; i < d.total; i++) deck.push(t);
   const players = playerNames.map((name, i) => ({
     id: randomUUID().slice(0, 8), name, kind: playerKinds[i] || 'human', color: COLORS[i % COLORS.length],
+    difficulty: playerKinds[i] === 'bot' ? playerDifficulties[i] || 'medium' : null,
     res: { wood: 0, brick: 0, sheep: 0, wheat: 0, ore: 0 },
     dev: { knight: 0, vp: 0, road: 0, year: 0, mono: 0 },
     devFresh: [], knightsPlayed: 0, robberMoves: 0,
@@ -193,7 +194,7 @@ export function createGame(settings) {
 }
 
 export function addLog(g, player, text, kind = 'event', detail = null) {
-  g.log.push({ t: Date.now(), color: player ? player.color : null, name: player ? player.name : '系统', text, kind,
+  g.log.push({ t: Date.now(), seat: player ? g.players.indexOf(player) + 1 : null, color: player ? player.color : null, name: player ? player.name : '系统', text, kind,
     ...(detail ? { detail } : {}) });
   if (g.log.length > 300) g.log.splice(0, g.log.length - 300);
 }
@@ -726,7 +727,7 @@ export function serialize(g, viewerId) {
   const players = g.players.map((p, i) => {
     const me = i === vi;
     return {
-      id: p.id, name: p.name, kind: p.kind || 'human', color: p.color, total: total(p),
+      id: p.id, name: p.name, kind: p.kind || 'human', difficulty: p.difficulty || null, color: p.color, total: total(p),
       res: me ? p.res : null,
       devCount: Object.values(p.dev).reduce((a, b) => a + b, 0),
       dev: me ? p.dev : null,
