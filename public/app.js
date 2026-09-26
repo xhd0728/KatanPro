@@ -411,7 +411,7 @@ function renderPlayerCards() {
     card.dataset.playerIndex = i;
     card.setAttribute('aria-current', String(i === active));
     card.style.setProperty('--player-color', p.color);
-    card.innerHTML = `<div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="player-identity"><span class="nm">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span>${difficultyBadge(p)}</span>${i === active ? '<span class="turn-status"><i></i>行动中</span>' : ''}<span class="vp"><b>${p.vp}</b>分</span></div>
+    card.innerHTML = `<div class="top"><span class="avatar" aria-label="玩家 ${i + 1}" title="玩家 ${i + 1}">${i + 1}</span><span class="player-identity"><span class="nm" title="${esc(p.name)}">${esc(p.name)}${i === S.viewer ? '<small class="you-tag">你</small>' : ''}</span>${difficultyBadge(p)}</span>${i === active ? '<span class="turn-status"><i></i>行动中</span>' : ''}<span class="vp"><b>${p.vp}</b>分</span></div>
       <div class="pcard-metrics" aria-label="${esc(p.name)}的建筑与行动统计">
         <div><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
         <div><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>

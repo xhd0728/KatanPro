@@ -2865,7 +2865,7 @@ body:has(#game.spectating) #offerBar { bottom:84px; }
 .difficulty-badge[data-difficulty="high"] { background:#e8f0f8; color:#416582; border-color:#c6d7e5; }
 .difficulty-badge[data-difficulty="very-high"] { background:#f0eaf8; color:#765691; border-color:#dbcee9; }
 .difficulty-badge[data-difficulty="highest"] { background:#fcf0dc; color:#926a25; border-color:#e9d4a8; }
-.player-identity { display:flex; flex-direction:column; align-items:flex-start; min-width:0; gap:4px; }
+.player-identity { display:flex; align-items:center; min-width:0; gap:5px; }
 @media(max-width:620px) {
   .room-roster { grid-template-columns:1fr; max-height:290px; overflow:auto; overscroll-behavior:contain; }
   .seat-difficulty { width:80px; min-height:40px; }

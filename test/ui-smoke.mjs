@@ -259,6 +259,7 @@ try{
   await run("$('#startBtn').click()");await until("typeof S!=='undefined'&&S?.phase==='play'",15000);
   assert.equal(await run('S.viewer'),-1);assert.equal(await run('S.players.every(p=>p.kind===\'bot\'&&p.res===null)'),true);
   assert.equal(await run("document.querySelectorAll('#playerCards .difficulty-badge').length"),2);
+  assert.equal(await run("[...document.querySelectorAll('.pcard .top')].every(top=>{const mid=e=>{const r=e.getBoundingClientRect();return r.top+r.height/2};const y=mid(top.querySelector('.avatar'));return [...top.querySelectorAll('.nm,.difficulty-badge,.turn-status,.vp')].every(e=>Math.abs(mid(e)-y)<=2)})"),true,'player name, difficulty and turn status share one row');
   await screenshot('ai-spectator-desktop');
   await call('Page.reload');await until("typeof S!=='undefined'&&S?.viewer===-1");
   assert.equal(await run('currentRoom.isHost'),true,'spectator host survives reload');
