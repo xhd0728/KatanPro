@@ -351,6 +351,26 @@ test('玩家交易支持多种资源和指定接收者', () => {
   assert.equal(g.offer, null);
 });
 
+test('同名 AI 的交易对象在拒绝、成交和报价视图中包含座位编号', () => {
+  const match = game(2); setup(match); match.rolled = true;
+  const [sender, receiver] = match.players;
+  sender.name = receiver.name = 'AI';
+  sender.kind = receiver.kind = 'bot';
+  sender.res.wood = receiver.res.brick = 2;
+  const offer = { type: 'offerTrade', give: { wood: 1 }, want: { brick: 1 }, targets: [1] };
+  assert.equal(playerAct(match, sender.id, offer), null);
+  assert.equal(serialize(match, receiver.id).offer.fromName, 'AI · 1 号');
+  assert.equal(playerAct(match, receiver.id, { type: 'rejectOffer' }), null);
+  assert.equal(match.log.at(-2).text, '拒绝了 AI · 1 号 的交易提案');
+  assert.equal(match.log.at(-2).seat, 2);
+  assert.equal(playerAct(match, sender.id, offer), null);
+  assert.equal(playerAct(match, receiver.id, { type: 'acceptOffer' }), null);
+  assert.match(match.log.at(-1).text, /^与 AI · 1 号 成交/);
+  sender.kind = 'human';
+  assert.equal(playerAct(match, sender.id, offer), null);
+  assert.equal(serialize(match, receiver.id).offer.fromName, 'AI');
+});
+
 test('AI 对不划算的玩家报价明确拒绝，逐一回应后提案结束', () => {
   const g = game(3); setup(g); g.rolled = true;
   const [a, b, c] = g.players;

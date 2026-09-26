@@ -623,6 +623,10 @@ function tradeBundle(value) {
   return RES.some(r => out[r] > 0) ? out : null;
 }
 const bundleText = bundle => RES.filter(r => bundle[r]).map(r => `${bundle[r]} ${RES_CN[r]}`).join('、');
+const tradePlayerName = (game, index) => {
+  const player = game.players[index];
+  return player.kind === 'bot' ? `${player.name} · ${index + 1} 号` : player.name;
+};
 function offerTrade(g, pi, give, want, rawTargets) {
   const p = g.players[pi];
   if (g.offer) return '场上已有待处理的交易提案';
@@ -646,7 +650,7 @@ function acceptOffer(g, qi) {
     me.res[r] += o.give[r] - o.want[r];
     from.res[r] += o.want[r] - o.give[r];
   }
-  addLog(g, me, `与 ${from.name} 成交：${bundleText(o.want)} ⇄ ${bundleText(o.give)}`);
+  addLog(g, me, `与 ${tradePlayerName(g, o.from)} 成交：${bundleText(o.want)} ⇄ ${bundleText(o.give)}`);
   g.offer = null;
   return null;
 }
@@ -654,7 +658,7 @@ function rejectOffer(g, qi) {
   const o = g.offer; if (!o) return '当前没有交易提案';
   if (o.from === qi || !o.targets.includes(qi)) return '这份交易没有邀请你';
   o.targets = o.targets.filter(i => i !== qi);
-  addLog(g, g.players[qi], `拒绝了 ${g.players[o.from].name} 的交易提案`);
+  addLog(g, g.players[qi], `拒绝了 ${tradePlayerName(g, o.from)} 的交易提案`);
   if (!o.targets.length) {
     g.offer = null;
     addLog(g, null, '交易提案已结束：所有受邀玩家均已拒绝');
@@ -765,7 +769,7 @@ export function serialize(g, viewerId) {
     players, viewer: vi, current: g.current, rolled: g.rolled,
     eventPending: !!(g.discardQueue.length || g.needMoveRobber || g.stealFrom.length),
     dice: g.dice, tally: g.tally, deckLeft: g.deck.length,
-    offer: g.offer ? { from: g.offer.from, fromName: g.players[g.offer.from].name, fromColor: g.players[g.offer.from].color, give: g.offer.give, want: g.offer.want, targets: g.offer.targets } : null,
+    offer: g.offer ? { from: g.offer.from, fromName: tradePlayerName(g, g.offer.from), fromColor: g.players[g.offer.from].color, give: g.offer.give, want: g.offer.want, targets: g.offer.targets } : null,
     longest: { ...g.longest, name: g.longest.holder != null ? g.players[g.longest.holder].name : null },
     army: { ...g.army, name: g.army.holder != null ? g.players[g.army.holder].name : null },
     roadBuildLeft: g.roadBuildLeft,
