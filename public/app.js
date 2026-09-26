@@ -378,9 +378,10 @@ function renderSidebar() {
   const log = $('#log'), nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 45;
   log.innerHTML = S.log.map(l => {
     const thought = l.kind === 'bot-thought';
+    const fallback = l.kind === 'bot-fallback';
     const tools = thought && Array.isArray(l.detail?.tools)
       ? l.detail.tools.filter(tool => Object.hasOwn(BOT_TOOL_LABELS, tool)).slice(0, 2) : [];
-    return `<div class="logline ${thought ? 'bot-thought' : ''}">${thought ? '<span class="thought-tag">AI 决策摘要</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}${l.seat ? ` · ${l.seat} 号` : ''}</b> ${esc(l.text)}${tools.length ? `<div class="thought-tools">${tools.map(tool => `<span>查验 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : ''}</div>`;
+    return `<div class="logline ${thought ? 'bot-thought' : ''} ${fallback ? 'bot-fallback' : ''}">${thought ? '<span class="thought-tag">AI 决策摘要</span>' : fallback ? '<span class="thought-tag fallback-tag">规则接手</span>' : ''}<b style="color:${l.color || '#7e8f69'}">${esc(l.name)}${l.seat ? ` · ${l.seat} 号` : ''}</b> ${esc(l.text)}${tools.length ? `<div class="thought-tools">${tools.map(tool => `<span>查验 ${BOT_TOOL_LABELS[tool]}</span>`).join('')}</div>` : ''}</div>`;
   }).join('');
   if (nearBottom) log.scrollTop = log.scrollHeight;
   renderStats();
@@ -416,7 +417,7 @@ function renderPlayerCards() {
         <div><span>${icon('settlement')}定居点</span><strong>${p.settlements}</strong></div>
         <div><span>${icon('city')}城市</span><strong>${p.cities}</strong></div>
         <div title="最长连续道路"><span>${icon('road')}连路长度</span><strong>${p.roadLength ?? p.roads}</strong></div>
-        <div title="主动打出骑士卡后移动强盗的次数；掷出 7 的移动不计"><span>${icon('knight')}强盗移动</span><strong>${p.robberMoves ?? 0}</strong></div>
+        <div title="仅统计主动打出骑士卡后的成功移动；掷出 7 不计入"><span>${icon('knight')}强盗移动</span><strong>${p.robberMoves ?? 0}</strong></div>
       </div>
       <div class="pcard-details"><span>已建道路 ${p.roads}</span><span>骑士出牌 ${p.knightsPlayed || 0}</span><span>手牌 ${p.total}</span><span>${p.needDiscard ? '待弃牌' : `发展卡 ${p.devCount}`}</span></div>
       <div class="score-track"><span style="width:${Math.min(100,p.vp/S.settings.targetVP*100)}%"></span></div>`;

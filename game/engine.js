@@ -389,6 +389,7 @@ function doRoll(g, pi) {
     addLog(g, p, `掷出 ${a} + ${b} = 7，强盗出动！`);
     g.discardQueue = g.players.map((q, i) => [q, i]).filter(([q]) => total(q) > 7).map(([, i]) => i);
     g.needMoveRobber = true;
+    g.robberByKnight = false;
     if (g.discardQueue.length) addLog(g, null, g.discardQueue.map(i => g.players[i].name).join('、') + ' 手牌超过 7 张，需弃掉一半');
   } else {
     addLog(g, p, `掷出 ${a} + ${b} = ${s}`);

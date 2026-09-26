@@ -291,9 +291,12 @@ async function runBot(room, bot) {
     if (offer && offer !== game.offer && ['acceptOffer', 'rejectOffer'].includes(action?.type)) return;
     const err = playerAct(game, playerId, action || fallback);
     if (err) {
+      if (bot.lastActionError !== err) addLog(game, game.players.find(p => p.id === playerId), `模型动作未执行：${err}，已切换规则建议`, 'bot-fallback');
+      bot.lastActionError = err;
       const freshFallback = ruleBotAction(serialize(game, playerId));
       if (freshFallback) playerAct(game, playerId, freshFallback);
     } else {
+      bot.lastActionError = null;
       const after = serialize(game, playerId);
       bot.memory = decision ? rememberBotDecision(bot.memory, state, after, decision) : reconcileBotMemory(bot.memory, after);
       if (profile.ai && game.winner == null) {

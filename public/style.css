@@ -1195,6 +1195,15 @@ input[type=checkbox] {
 
 .bot-thought b { font-weight:700; }
 
+.logline.bot-fallback {
+  color:#806c55;
+  background:#fbf7ec;
+  border-left:3px solid #c7a35f;
+  padding-left:8px;
+}
+
+.fallback-tag { color:#9a7533; }
+
 .thought-tag {
   display:inline-block;
   margin-right:6px;

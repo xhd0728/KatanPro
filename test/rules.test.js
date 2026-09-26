@@ -179,7 +179,7 @@ test('最长路可在对手建筑处结束，不能从该点继续穿过', () =>
   assert.equal(serialize(g, p.id).players[0].roadLength, 5);
 });
 
-test('强盗移动只统计主动打出骑士卡后的移动，掷出 7 的被动移动不计', () => {
+test('强盗移动只统计骑士卡触发的成功移动', () => {
   const g = game(2); setup(g);
   const p = g.players[g.current], original = g.map.robber;
   g.needMoveRobber = true;
@@ -187,18 +187,19 @@ test('强盗移动只统计主动打出骑士卡后的移动，掷出 7 的被�
   assert.equal(p.robberMoves, 0);
   const first = g.map.hexes.find(h => h.id !== original).id;
   assert.equal(playerAct(g, p.id, { type: 'moveRobber', hex: first }), null);
-  assert.equal(serialize(g, null).players[g.current].robberMoves, 0, '掷出 7 的移动不计入');
+  assert.equal(serialize(g, null).players[g.current].robberMoves, 0);
   g.stealFrom = []; g.pendingStealer = null;
   p.dev.knight = 1;
   assert.equal(playerAct(g, p.id, { type: 'playKnight' }), null);
   assert.equal(p.knightsPlayed, 1);
+  assert.match(playerAct(g, p.id, { type: 'moveRobber', hex: first }), /必须换/);
+  assert.equal(p.robberMoves, 0);
   const second = g.map.hexes.find(h => h.id !== first).id;
   assert.equal(playerAct(g, p.id, { type: 'moveRobber', hex: second }), null);
   assert.equal(serialize(g, null).players[g.current].robberMoves, 1);
-  g.stealFrom = []; g.pendingStealer = null;
-  g.needMoveRobber = true;
+  g.stealFrom = []; g.pendingStealer = null; g.needMoveRobber = true;
   assert.equal(playerAct(g, p.id, { type: 'moveRobber', hex: first }), null);
-  assert.equal(p.robberMoves, 1, '骑士标记只作用于一次移动');
+  assert.equal(p.robberMoves, 1);
 });
 
 test('AI 动作解析与阶段校验', () => {

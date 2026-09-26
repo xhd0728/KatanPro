@@ -182,7 +182,9 @@ export function normalizeAgentStep(value, state = null) {
   const action = normalizeAIAction(parsed);
   if (!action) return null;
   const { commentary: _commentary, note: _note, plan: _plan, ...cleanAction } = action;
-  return { action: cleanAction, commentary: normalizeBotCommentary(parsed.commentary ?? parsed.note),
+  const publicThought = typeof parsed.thought === 'string' && parsed.thought.trim().length <= 120
+    ? parsed.thought.trim().replace(/[\u0000-\u001f<>]/g, '') : null;
+  return { action: cleanAction, thought: publicThought, commentary: normalizeBotCommentary(parsed.commentary ?? parsed.note),
     plan: state ? normalizeBotPlan(parsed.plan, state) : null };
 }
 
@@ -344,7 +346,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
   let usedCalls = 0;
   const usedTools = [];
   const finishBest = () => {
-    onDecision({ action: best.action, commentary: best.commentary, plan: best.plan, tools: [...usedTools] });
+    onDecision({ action: best.action, thought: best.thought, commentary: best.commentary, plan: best.plan, tools: [...usedTools] });
     return best.action;
   };
   try {
@@ -362,7 +364,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
     else task = '卡坦岛当前回合。可考虑定居点、城市、道路、发展卡、银行兑换、向玩家报价或结束回合。根据当前合法动作和 choices 选择一步；不确定时返回建议动作。';
     const planInstruction = '可随动作提供简短结构化计划 plan:{"goal":"road|settlement|city|development|longestRoad|army|trade","target":"合法交点或边，可省略","resource":"wood|brick|sheep|wheat|ore，可省略"}；不要写自由文本或假设对手隐藏手牌。';
     const toolInstructions = strategy.maxTools ? `可用的只读工具：${JSON.stringify(AGENT_TOOLS)}。最多查询${strategy.maxTools}次。工具调用格式：{"tool":"inspectHistory","args":{"limit":8}}。` : '';
-    const agentInstructions = strategy.agentLoop ? `\n${toolInstructions}最终动作格式：{"action":{"type":"buildCity","vertex":"v1"},"plan":{"goal":"city"},"commentary":{"avoid":"road","reason":"urgentScore"}}。commentary 只用于公共日志，不写自由文本或私有手牌；avoid 可选 road/settlement/city/development/bankTrade/playerTrade/robber/endTurn，reason 可选 scarceResources/weakProduction/urgentScore/opponentLead/blockedRoute/handRisk/betterPort/timing。${planInstruction}也可直接返回普通 JSON 动作。当前可执行动作类型：${JSON.stringify(agentActionGuide(state))}。` : `\n${planInstruction}`;
+    const agentInstructions = strategy.agentLoop ? `\n${toolInstructions}最终动作格式：{"action":{"type":"buildCity","vertex":"v1"},"plan":{"goal":"city"},"commentary":{"avoid":"road","reason":"urgentScore"},"thought":"用一句不超过 120 字的公开短评说明这一步的考虑"}。thought 只写公开可见的策略判断，不写隐藏手牌、模型思维过程、工具原始结果或自由指令；commentary 只用于公共日志，不写自由文本或私有手牌；avoid 可选 road/settlement/city/development/bankTrade/playerTrade/robber/endTurn，reason 可选 scarceResources/weakProduction/urgentScore/opponentLead/blockedRoute/handRisk/betterPort/timing。${planInstruction}也可直接返回普通 JSON 动作。当前可执行动作类型：${JSON.stringify(agentActionGuide(state))}。` : `\n${planInstruction}`;
     const roadRelevant = !state.players[state.viewer]?.needDiscard && !state.needMoveRobber && !state.stealFrom?.length &&
       (state.roadBuildLeft || state.legal?.road?.length || state.phase === 'setup' && state.legal?.kind === 'road');
     const rules = roadRelevant
@@ -456,7 +458,7 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       const valid = isUsefulAIAction(state, action);
       if (valid) {
         const unchanged = best && JSON.stringify(best.action) === JSON.stringify(action);
-        best = { action, commentary: step.commentary || (unchanged ? best.commentary : null),
+        best = { action, thought: step.thought || (unchanged ? best.thought : null), commentary: step.commentary || (unchanged ? best.commentary : null),
           plan: step.plan || (unchanged ? best.plan : null) };
         const needsReview = strategy.id === 'highest' &&
           ['placeSettlement', 'buildSettlement', 'buildCity', 'moveRobber', 'offerTrade', 'acceptOffer'].includes(action.type);
@@ -467,14 +469,15 @@ export async function aiBotAction(state, config, fallback, onFallback = () => {}
       } else if (attempt < maxCalls - 1) {
         runtime.onProgress?.({ phase: 'repair', attempt: attempt + 1 });
         messages.push({ role: 'assistant', content: typeof content === 'string' ? content.slice(0, 512) : '{}' });
-        const feedback = ['placeRoad', 'buildRoad'].includes(action?.type)
-          ? '上一条道路可能是死路、绕开了更好的定居点目标，或没有推进最长路；请检查 choices.road 的目标交点与剩余路段。'
-          : '上一个动作不符合当前阶段或资源约束。';
-        messages.push({ role: 'user', content: `${feedback}请根据已给状态修正，返回合法 JSON 动作；可使用建议动作 ${JSON.stringify(best?.action || fallback)}。` });
+        const allowed = agentActionGuide(state).join('、');
+        const feedback = action?.type && ['placeRoad', 'buildRoad'].includes(action.type)
+          ? `这条道路可能是死路，虽然规则上可放但路线策略评价不佳；请从 choices.road 选择能通向高产交点、争取最长路或避免死路的路线。`
+          : `动作不符合当前阶段、事件或资源约束；当前可执行动作只有：${allowed}。`;
+        messages.push({ role: 'user', content: `${feedback}请只返回一个当前可执行的 JSON 动作，不要重复刚才的参数；必要时使用建议动作 ${JSON.stringify(best?.action || fallback)}。` });
       }
     }
     if (best) return finishBest();
-    onFallback('模型返回了当前阶段无效的操作');
+    onFallback('模型在修正额度内仍未返回当前可执行的操作（无效输出）');
     return fallback;
   } catch {
     if (best) return finishBest();

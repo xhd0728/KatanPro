@@ -6,7 +6,7 @@ const ACTION = Object.freeze({
   buildSettlement: '建造定居点', buildCity: '升级城市', buyDev: '购买发展卡',
   playKnight: '打出骑士牌', playYear: '使用丰收之年', playMono: '使用垄断之年',
   playRoad: '使用筑路工', bankTrade: '与银行兑换', offerTrade: '提出玩家交易',
-  acceptOffer: '接受报价', rejectOffer: '拒绝报价', moveRobber: '移动强盗', steal: '选择抢牌目标',
+  acceptOffer: '接受报价', rejectOffer: '拒绝报价', moveRobber: '移动强盗', steal: '选择抢牌目标', endTurn: '结束回合',
 });
 const AVOID = Object.freeze({
   road: '继续修路', settlement: '建定居点', city: '升级城市', development: '买发展卡',
@@ -34,7 +34,7 @@ const OUTCOME = Object.freeze({
   playMono: '集中取得一种资源', playRoad: '趁机延伸道路',
   bankTrade: '把资源换成当前更有用的种类', offerTrade: '尝试换取下一步所需资源',
   acceptOffer: '接受这笔交易', rejectOffer: '暂不接受这笔交易',
-  moveRobber: '尝试牵制对手的资源产出', steal: '从目标玩家取得一张牌',
+  moveRobber: '尝试牵制对手的资源产出', steal: '从目标玩家取得一张牌', endTurn: '让下一位开拓者行动',
 });
 
 export function normalizeBotCommentary(value) {
@@ -44,7 +44,11 @@ export function normalizeBotCommentary(value) {
   return avoid || reason ? { avoid, reason } : null;
 }
 
-export function formatBotCommentary({ action, commentary, tools = [], state }) {
+export function formatBotCommentary({ action, thought, commentary, tools = [], state }) {
+  if (typeof thought === 'string' && thought.trim()) {
+    const text = thought.trim().replace(/[\u0000-\u001f<>]/g, '').slice(0, 120);
+    if (text) return text;
+  }
   const choice = ACTION[action?.type];
   if (!choice) return null;
   const note = normalizeBotCommentary(commentary);

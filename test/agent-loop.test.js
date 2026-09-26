@@ -63,6 +63,13 @@ test('结构化盘算只接受标签，公共日志不使用模型自由文本',
     { type: 'endTurn' });
 });
 
+test('agent 公开短评受长度与字符约束，默认仍可回退结构化摘要', () => {
+  const step = normalizeAgentStep(JSON.stringify({ action: { type: 'endTurn' }, thought: '选择结束回合 <script>\u0007' }));
+  assert.equal(step.thought, '选择结束回合 script');
+  assert.equal(formatBotCommentary({ action: step.action, thought: step.thought }), '选择结束回合 script');
+  assert.equal(formatBotCommentary({ action: step.action, thought: '' }), '选择结束回合，让下一位开拓者行动。');
+});
+
 test('最高档可查询两种工具，再提交和复核动作，调用数受限', async () => {
   const g = readyGame(), p = g.players[g.current];
   p.res = Object.fromEntries(RES.map(r => [r, r === 'wheat' ? 2 : r === 'ore' ? 3 : 0]));
