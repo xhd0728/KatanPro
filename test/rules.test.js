@@ -351,6 +351,25 @@ test('玩家交易支持多种资源和指定接收者', () => {
   assert.equal(g.offer, null);
 });
 
+test('同名 AI 的成就持有者和系统回合消息使用实际座位编号', () => {
+  const match = createGame({ mapSize: 'small', targetVP: 10, playerNames: ['AI', 'AI'], playerKinds: ['bot', 'bot'] });
+  assert.match(match.log.at(-1).text, /AI · 1 号 先手/);
+  setup(match);
+  assert.match(match.log.at(-1).text, /AI · 1 号 先掷骰子/);
+  match.rolled = true;
+  assert.equal(playerAct(match, match.players[0].id, { type: 'endTurn' }), null);
+  assert.equal(match.log.at(-1).text, '▶ AI · 2 号 的回合');
+  match.longest = { holder: 1, len: 6 };
+  match.army = { holder: 0, count: 3 };
+  for (const viewer of [null, match.players[0].id]) {
+    const state = serialize(match, viewer);
+    assert.equal(state.longest.name, 'AI · 2 号');
+    assert.equal(state.army.name, 'AI · 1 号');
+  }
+  match.players[0].kind = 'human';
+  assert.equal(serialize(match, null).army.name, 'AI');
+});
+
 test('中途观战共享服务端起止时间，结束时长保持固定', () => {
   const match = game(2);
   match.startedAt = Date.now() - 65000;

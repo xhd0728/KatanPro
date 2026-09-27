@@ -189,7 +189,7 @@ export function createGame(settings) {
   };
   for (const p of players) for (const r of RES) g.bank[r] -= p.res[r];
   addLog(g, null, `游戏开始：${({ small: '小地图', medium: '中地图', large: '大地图', epic: '超大大陆', twin: '双岛地峡' })[mapSize] || '小地图'} ${map.hexes.length} 块 · ${targetVP} 分获胜`);
-  addLog(g, players[g.current], `${players[g.current].name} 先手，请依次摆放初始定居点和道路`);
+  addLog(g, players[g.current], `${tradePlayerName(g, g.current)} 先手，请依次摆放初始定居点和道路`);
   return g;
 }
 
@@ -372,7 +372,7 @@ function setupAct(g, pi, act) {
   g.setupStep++;
   if (g.setupStep >= g.setupSteps.length) {
     g.phase = 'play'; g.current = g.firstPlayer; g.turn = 1;
-    addLog(g, null, `摆放完成，${g.players[g.current].name} 先掷骰子`);
+    addLog(g, null, `摆放完成，${tradePlayerName(g, g.current)} 先掷骰子`);
   }
   return null;
 }
@@ -390,7 +390,7 @@ function doRoll(g, pi) {
     g.discardQueue = g.players.map((q, i) => [q, i]).filter(([q]) => total(q) > 7).map(([, i]) => i);
     g.needMoveRobber = true;
     g.robberByKnight = false;
-    if (g.discardQueue.length) addLog(g, null, g.discardQueue.map(i => g.players[i].name).join('、') + ' 手牌超过 7 张，需弃掉一半');
+    if (g.discardQueue.length) addLog(g, null, g.discardQueue.map(i => tradePlayerName(g, i)).join('、') + ' 手牌超过 7 张，需弃掉一半');
   } else {
     addLog(g, p, `掷出 ${a} + ${b} = ${s}`);
     produce(g, s);
@@ -476,7 +476,7 @@ function doStealFrom(g, pi, fi) {
   const from = g.players[fi];
   const r = stealRandomOne(g, g.players[pi], from);
   if (r) {
-    addLog(g, g.players[pi], `抢走了 ${from.name} 的 1 张资源卡`);
+    addLog(g, g.players[pi], `抢走了 ${tradePlayerName(g, g.players.indexOf(from))} 的 1 张资源卡`);
     g.pendingStealEvent = { turn: g.turn, actor: pi, from: fi };
   }
   checkWin(g);
@@ -673,7 +673,7 @@ function endTurn(g, pi) {
   g.offer = null; g.rolled = false; g.dice = null;
   g.current = (g.current + 1) % g.players.length;
   g.turn++;
-  addLog(g, null, `▶ ${g.players[g.current].name} 的回合`);
+  addLog(g, null, `▶ ${tradePlayerName(g, g.current)} 的回合`);
   checkWin(g);
   return null;
 }
@@ -771,8 +771,8 @@ export function serialize(g, viewerId) {
     eventPending: !!(g.discardQueue.length || g.needMoveRobber || g.stealFrom.length),
     dice: g.dice, tally: g.tally, deckLeft: g.deck.length,
     offer: g.offer ? { from: g.offer.from, fromName: tradePlayerName(g, g.offer.from), fromColor: g.players[g.offer.from].color, give: g.offer.give, want: g.offer.want, targets: g.offer.targets } : null,
-    longest: { ...g.longest, name: g.longest.holder != null ? g.players[g.longest.holder].name : null },
-    army: { ...g.army, name: g.army.holder != null ? g.players[g.army.holder].name : null },
+    longest: { ...g.longest, name: g.longest.holder != null ? tradePlayerName(g, g.longest.holder) : null },
+    army: { ...g.army, name: g.army.holder != null ? tradePlayerName(g, g.army.holder) : null },
     roadBuildLeft: g.roadBuildLeft,
     discardCount: g.discardQueue.length, robberPending: g.needMoveRobber, stealPending: g.stealFrom.length > 0,
     needMoveRobber: !g.discardQueue.length && g.needMoveRobber && vi === g.current,
